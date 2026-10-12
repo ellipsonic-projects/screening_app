@@ -5,11 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RegisterSchema, RegisterInput } from '@/lib/validators';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/auth-context';
 import Link from 'next/link';
-import { AlertTriangle, User, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { AlertTriangle, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
 
 export function RegisterForm() {
@@ -33,7 +31,7 @@ export function RegisterForm() {
     setIsSubmitting(true);
     setApiError('');
     try {
-      const user = await registerUser(data.email, data.password, data.confirmPassword, 'student');
+      await registerUser(data.email, data.password, data.confirmPassword, 'student');
       router.push('/student/profile');
     } catch (error: any) {
       setApiError(error.message || 'Registration failed');
@@ -43,111 +41,137 @@ export function RegisterForm() {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-6 sm:p-8 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-6">
-      <div className="text-center flex flex-col items-center pb-2">
-        <BrandLogo showTagline size="lg" />
+    <div className="w-[calc(100%-32px)] sm:w-full max-w-[410px] mx-auto p-7 sm:p-8 bg-white rounded-[20px] border border-[#E2ECF8] shadow-[0_10px_35px_rgba(16,35,78,0.06)] font-sans-ui text-left">
+      {/* 1. Branding Header */}
+      <div className="flex justify-center mb-5 sm:mb-6">
+        <BrandLogo size="md" showTagline={false} />
       </div>
 
+      {/* 2. Heading */}
+      <h1 className="text-[26px] sm:text-[28px] font-bold text-[#10234E] tracking-tight text-center mb-6">
+        Sign Up
+      </h1>
+
+      {/* 3. API Error Alert */}
       {apiError && (
-        <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-xl">
-          <AlertTriangle className="w-4 h-4 inline-block mr-1" /> {apiError}
+        <div className="p-3 mb-4 bg-rose-50 border border-rose-200/80 text-rose-700 text-xs sm:text-[13px] font-medium rounded-xl flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+          <span>{apiError}</span>
         </div>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* 4. Registration Form */}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 sm:space-y-4">
+        {/* Email Address */}
         <div className="space-y-1.5">
-          <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-            Email Address
+          <label htmlFor="email" className="block text-[14px] font-semibold text-[#10234E]">
+            Email address
           </label>
-          <Input
-            {...register('email')}
-            type="email"
-            className="w-full text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium"
-            placeholder="Enter your email"
-          />
-          {errors.email && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.email.message}</p>}
+          <div className="relative">
+            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+            <input
+              {...register('email')}
+              id="email"
+              type="email"
+              placeholder="Enter your email"
+              className="w-full h-[46px] pl-10 pr-3.5 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
+            />
+          </div>
+          {errors.email && (
+            <p className="text-rose-500 text-xs font-medium pl-1">{errors.email.message}</p>
+          )}
         </div>
 
+        {/* Password */}
         <div className="space-y-1.5">
-          <label htmlFor="password" className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+          <label htmlFor="password" className="block text-[14px] font-semibold text-[#10234E]">
             Password
           </label>
           <div className="relative">
-            <Input
+            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+            <input
               {...register('password')}
+              id="password"
               type={showPassword ? 'text' : 'password'}
-              className="w-full pr-10 text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium"
               placeholder="Enter your password"
+              className="w-full h-[46px] pl-10 pr-10 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
             />
             <button
               type="button"
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 focus:outline-none"
               onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-[#94A3B8] hover:text-[#10234E] focus:outline-none transition-colors cursor-pointer"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                </svg>
+                <EyeOff className="w-[18px] h-[18px]" />
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
+                <Eye className="w-[18px] h-[18px]" />
               )}
             </button>
           </div>
-          {errors.password && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.password.message}</p>}
+          {errors.password && (
+            <p className="text-rose-500 text-xs font-medium pl-1">{errors.password.message}</p>
+          )}
         </div>
 
+        {/* Confirm Password */}
         <div className="space-y-1.5">
-          <label htmlFor="confirmPassword" className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-            Confirm Password
+          <label htmlFor="confirmPassword" className="block text-[14px] font-semibold text-[#10234E]">
+            Confirm password
           </label>
           <div className="relative">
-            <Input
+            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+            <input
               {...register('confirmPassword')}
+              id="confirmPassword"
               type={showConfirmPassword ? 'text' : 'password'}
-              className="w-full pr-10 text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium"
               placeholder="Confirm your password"
+              className="w-full h-[46px] pl-10 pr-10 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
             />
             <button
               type="button"
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 focus:outline-none"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-[#94A3B8] hover:text-[#10234E] focus:outline-none transition-colors cursor-pointer"
+              aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
             >
               {showConfirmPassword ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                </svg>
+                <EyeOff className="w-[18px] h-[18px]" />
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
+                <Eye className="w-[18px] h-[18px]" />
               )}
             </button>
           </div>
-          {errors.confirmPassword && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.confirmPassword.message}</p>}
+          {errors.confirmPassword && (
+            <p className="text-rose-500 text-xs font-medium pl-1">{errors.confirmPassword.message}</p>
+          )}
         </div>
 
-        <Button
+        {/* Submit Button */}
+        <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-sm transition mt-2 cursor-pointer"
+          className="w-full h-[46px] sm:h-[48px] mt-5 bg-[#1760FF] hover:bg-[#1250DF] active:scale-[0.99] text-white font-semibold text-[14px] sm:text-[15px] rounded-xl shadow-xs transition-all flex items-center justify-center cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          {isSubmitting ? 'Registering Account...' : 'Sign Up'}
-        </Button>
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              <span>Registering Account...</span>
+            </>
+          ) : (
+            <span>Sign Up</span>
+          )}
+        </button>
       </form>
 
-      <div className="border-t border-slate-100 pt-4 text-center">
-        <p className="text-xs text-slate-500">
-          Already have an account?{' '}
-          <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-bold hover:underline">
-            Login here
-          </Link>
-        </p>
+      {/* Footer Navigation */}
+      <div className="mt-5 sm:mt-6 text-center text-xs sm:text-[13px] text-[#64748B]">
+        <span>Already have an account? </span>
+        <Link
+          href="/auth/login"
+          className="font-semibold text-[#1760FF] hover:text-[#1250DF] hover:underline transition-colors"
+        >
+          Sign in
+        </Link>
       </div>
     </div>
   );
