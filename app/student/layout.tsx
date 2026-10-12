@@ -23,7 +23,7 @@ export default function StudentLayout({
   }, [user, isLoading, isAuthenticated, router]);
 
   if (isLoading || !isAuthenticated || (user && user.role !== 'student')) {
-    return <div className="flex justify-center items-center h-screen">Checking permissions...</div>;
+    return <div className="flex justify-center items-center h-screen bg-slate-50 text-slate-600 font-medium text-sm">Checking permissions...</div>;
   }
 
   return children;

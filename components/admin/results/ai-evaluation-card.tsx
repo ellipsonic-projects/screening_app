@@ -141,7 +141,7 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">New Score</label>
             <input 
               type="number" 
-              className="w-full border border-slate-200 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+              className="w-full bg-white text-slate-900 border border-slate-200 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
               value={overrideScore} 
               onChange={(e) => setOverrideScore(e.target.value)} 
               max={evaluation.maxPoints}
@@ -151,7 +151,7 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Feedback</label>
             <input 
               type="text"
-              className="w-full border border-slate-200 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+              className="w-full bg-white text-slate-900 placeholder:text-slate-400 border border-slate-200 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
               value={overrideFeedback} 
               onChange={(e) => setOverrideFeedback(e.target.value)} 
               placeholder="Edit feedback..."

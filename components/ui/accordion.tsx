@@ -15,7 +15,7 @@ export function AccordionTrigger({ children, isOpen, onClick, className }: any) 
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full items-center justify-between px-5 py-4 text-sm font-semibold transition-all hover:bg-slate-50",
+        "flex w-full items-center justify-between px-5 py-4 text-sm font-semibold text-slate-800 transition-all hover:bg-slate-50",
         className
       )}
     >
