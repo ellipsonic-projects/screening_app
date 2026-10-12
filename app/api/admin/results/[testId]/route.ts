@@ -129,6 +129,40 @@ export async function GET(
         evaluations: responsesInSection.map(r => {
           const ai = r.ai_evaluation as any; // Cast safely since we included it
           const isEligibility = r.question.section === 'ELIGIBILITY';
+          const isAiReviewable = REVIEWABLE_TYPES.includes(r.question.type);
+
+          let status: string;
+          if (isEligibility) {
+            status = 'ELIGIBILITY_ONLY';
+          } else if (isAiReviewable) {
+            if (ai?.evaluation_status) {
+              status = ai.evaluation_status;
+            } else if (r.evaluation_status === 'FAILED') {
+              status = 'FAILED';
+            } else if (r.evaluation_status === 'PROCESSING') {
+              status = 'PROCESSING';
+            } else {
+              status = 'PENDING';
+            }
+          } else {
+            status = r.points_earned !== null ? 'SCORED' : 'PENDING';
+          }
+
+          const isCompleted = status === 'COMPLETED';
+          const isFailed = status === 'FAILED';
+
+          let pointsEarned: number | null = null;
+          if (isEligibility || isFailed) {
+            pointsEarned = null;
+          } else if (isAiReviewable) {
+            if (ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined && isCompleted) {
+              pointsEarned = Number(ai.obtained_marks);
+            } else {
+              pointsEarned = null;
+            }
+          } else {
+            pointsEarned = r.points_earned !== null ? Number(r.points_earned) : null;
+          }
 
           return {
             questionId: r.question.id,
@@ -136,18 +170,18 @@ export async function GET(
             type: r.question.type,
             section: r.question.section,
             studentAnswer: r.student_answer,
-            pointsEarned: isEligibility ? null : (ai?.obtained_marks ?? r.points_earned ?? 0),
+            pointsEarned,
             maxPoints: isEligibility ? null : (ai?.maximum_marks ?? r.question.points ?? 0),
-            isCorrect: r.is_correct,
-            status: isEligibility ? 'ELIGIBILITY_ONLY' : (ai?.evaluation_status || (r.points_earned !== null ? 'SCORED' : 'PENDING')),
+            isCorrect: isFailed ? false : r.is_correct,
+            status,
             feedback: ai?.feedback,
             strengths: ai?.strengths,
             improvements: ai?.improvements,
             mistakes: (ai?.raw_response as any)?.mistakes || [],
             suggestions: (ai?.raw_response as any)?.suggestions || [],
             modelUsed: ai?.model_used,
-            rawResponse: ai?.raw_response,
-            evaluatedAt: ai?.evaluated_at
+            rawResponse: ai?.raw_response || r.ai_evaluation_json || null,
+            evaluatedAt: ai?.evaluated_at || (r.ai_evaluation_json as any)?.evaluatedAt || null
           };
         })
       };

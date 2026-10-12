@@ -6,6 +6,8 @@ import { recalculateTestScore } from '@/lib/services/score-calculation';
 import { SubmitTestResponseSchema } from '@/lib/validators';
 import vm from 'vm';
 
+export const maxDuration = 60;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string, action: string }> }
@@ -100,10 +102,14 @@ export async function POST(
 
     // Special case for reevaluate
     if (action === 'reevaluate') {
-      const data = await request.json();
+      if (!id || typeof id !== 'string' || id.trim() === '') {
+        return NextResponse.json({ message: 'Valid testId is required in the route parameter' }, { status: 400 });
+      }
+
+      const data = await request.json().catch(() => ({}));
       const { questionId } = data;
 
-      if (!questionId) {
+      if (!questionId || typeof questionId !== 'string' || questionId.trim() === '') {
         return NextResponse.json({ message: 'questionId is required' }, { status: 400 });
       }
 
@@ -122,7 +128,15 @@ export async function POST(
         where: { id: testResponse.id },
         data: {
           points_earned: null,
+          evaluation_status: 'PENDING',
           ai_evaluation_json: { evaluation_status: 'PENDING', evaluated_at: new Date().toISOString() }
+        }
+      });
+
+      await prisma.aIEvaluation.updateMany({
+        where: { test_response_id: testResponse.id },
+        data: {
+          evaluation_status: 'PENDING'
         }
       });
 

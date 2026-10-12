@@ -16,9 +16,12 @@ const worker = new Worker<EvaluationJobPayload>(
     const { testId, evalPayloads } = job.data;
     
     try {
-      // The processBackgroundEvaluations handles the loop, DB updates, and score recalculation.
-      // It sets status to PROCESSING internally.
-      await processBackgroundEvaluations(evalPayloads);
+      const mappedPayloads = evalPayloads.map(p => ({
+        testId,
+        questionId: p.questionId,
+        studentAnswer: p.studentAnswer
+      }));
+      await processBackgroundEvaluations(mappedPayloads, testId);
     } catch (error) {
       console.error(`[Worker] Job ${job.id} failed:`, error);
       

@@ -26,7 +26,8 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
     if (status === 'FAILED') return 'text-rose-700 bg-rose-50 border-rose-200';
     if (status === 'RETRYING') return 'text-amber-700 bg-amber-50 border-amber-200';
     if (status === 'SCORED') return 'text-purple-700 bg-purple-50 border-purple-200';
-    return 'text-blue-700 bg-blue-50 border-blue-200';
+    if (status === 'PROCESSING') return 'text-blue-700 bg-blue-50 border-blue-200';
+    return 'text-amber-700 bg-amber-50 border-amber-200';
   };
 
   const getTypeIcon = (type: string) => {
@@ -62,6 +63,7 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
   };
 
   const handleReevaluate = async () => {
+    if (isReevaluating) return;
     setIsReevaluating(true);
     try {
       const token = localStorage.getItem('token');
@@ -71,6 +73,7 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Re-evaluation queued successfully. Please refresh in a moment.');
+      if (onRefresh) onRefresh();
     } catch (error) {
       alert('Failed to re-evaluate');
     } finally {
@@ -127,7 +130,7 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
               <Pencil className="w-4 h-4" />
             </Button>
           )}
-          {evaluation.section !== 'ELIGIBILITY' && evaluation.status !== 'SCORED' && (
+          {evaluation.section !== 'ELIGIBILITY' && evaluation.status !== 'COMPLETED' && (
             <Button variant="outline" size="sm" onClick={handleReevaluate} disabled={isReevaluating} className="h-8 w-8 p-0 text-slate-500 hover:text-slate-700 border-slate-200 bg-white" title="Re-evaluate">
               {isReevaluating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
             </Button>
@@ -297,13 +300,28 @@ export function AIEvaluationCard({ evaluation, testId, idx, onRefresh }: { evalu
         </div>
       )}
 
+      {(evaluation.status === 'PENDING' || evaluation.status === 'PROCESSING') && evaluation.section !== 'ELIGIBILITY' && (
+        <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />
+            <span className="text-xs font-medium text-amber-800">
+              {evaluation.status === 'PROCESSING' 
+                ? 'AI evaluation is currently processing...' 
+                : 'AI evaluation is pending. Click the re-evaluate button above to evaluate this answer.'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {evaluation.status === 'FAILED' && (
         <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg">
           <h5 className="font-bold text-[10px] text-rose-800 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
             Evaluation Failed
           </h5>
-          <p className="text-rose-700 text-[10px] font-mono break-all">{JSON.stringify(evaluation.rawResponse) || 'Unknown Error'}</p>
+          <p className="text-rose-700 text-xs font-mono break-all">
+            {evaluation.rawResponse?.error || (typeof evaluation.rawResponse === 'string' ? evaluation.rawResponse : JSON.stringify(evaluation.rawResponse)) || 'Unknown Error'}
+          </p>
         </div>
       )}
     </div>
