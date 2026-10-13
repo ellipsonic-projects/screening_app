@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       branch: test.student?.branch_name || '',
       email: test.student?.user?.email || '',
       status: test.status,
-      score: test.score ? Number(test.score) : null,
+      score: test.score !== null && test.score !== undefined ? Number(test.score) : null,
       violations: test.violations_count || 0,
       createdAt: test.created_at,
       submittedAt: test.end_time,

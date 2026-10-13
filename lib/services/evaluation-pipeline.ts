@@ -164,3 +164,166 @@ export async function processBackgroundEvaluations(
     console.error(`[Background Evaluation Fatal Error] Test ID: ${testId}`, error);
   }
 }
+
+/**
+ * Evaluates and grades all persisted responses for an assessment attempt.
+ * Objective questions (MCQs, rankings, multi-select) are graded immediately.
+ * Subjective questions (coding, open_text, structured_response) are queued for AI evaluation.
+ * Total score is recalculated immediately for objective marks, and re-calculated once AI evaluation finishes.
+ */
+export async function gradePersistedTestResponses(testId: string): Promise<number> {
+  const test = await prisma.test.findUnique({
+    where: { id: testId },
+    include: {
+      test_questions: {
+        include: { question: true }
+      },
+      test_responses: true
+    }
+  });
+
+  if (!test) {
+    throw new Error(`Test ${testId} not found`);
+  }
+
+  const questionMap = new Map();
+  if (test.test_questions) {
+    test.test_questions.forEach((tq: any) => {
+      questionMap.set(tq.question_id, tq.question);
+    });
+  }
+
+  const evalPayloads: BackgroundEvalPayload[] = [];
+  const aiEvaluableTypes = ['coding', 'structured_response', 'open_text'];
+
+  for (const resp of test.test_responses || []) {
+    const q = questionMap.get(resp.question_id);
+    if (!q) continue;
+
+    const answer = resp.student_answer || '';
+    const qPoints = q.points || 0;
+
+    if (aiEvaluableTypes.includes(q.type)) {
+      if (resp.evaluation_status !== 'COMPLETED') {
+        if (answer.trim().length > 0) {
+          evalPayloads.push({
+            testId,
+            questionId: resp.question_id,
+            studentAnswer: answer
+          });
+
+          await prisma.testResponse.update({
+            where: { id: resp.id },
+            data: {
+              evaluation_status: 'PENDING',
+              ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
+            }
+          });
+        } else {
+          await prisma.testResponse.update({
+            where: { id: resp.id },
+            data: {
+              points_earned: 0,
+              is_correct: false,
+              evaluation_status: 'COMPLETED'
+            }
+          });
+        }
+      }
+    } else if (q.type === 'ranking') {
+      try {
+        const studentObj = JSON.parse(answer || '{}');
+        const correctOrder = JSON.parse(q.correct_answer || '[]');
+        const allowPartial = !!q.options_json?.allowPartialMarks;
+
+        const sortedKeys = Object.keys(studentObj).sort((a, b) => studentObj[a] - studentObj[b]);
+
+        let pointsEarned = 0;
+        if (JSON.stringify(sortedKeys) === JSON.stringify(correctOrder)) {
+          pointsEarned = qPoints;
+        } else if (allowPartial && correctOrder.length > 0) {
+          let correctPositions = 0;
+          for (let i = 0; i < correctOrder.length; i++) {
+            if (sortedKeys[i] === correctOrder[i]) correctPositions++;
+          }
+          pointsEarned = parseFloat(((correctPositions / correctOrder.length) * qPoints).toFixed(2));
+        }
+
+        await prisma.testResponse.update({
+          where: { id: resp.id },
+          data: {
+            points_earned: pointsEarned,
+            is_correct: pointsEarned === qPoints,
+            evaluation_status: 'COMPLETED'
+          }
+        });
+      } catch (e) {
+        console.error('[Ranking Eval Error]', e);
+      }
+    } else if (['mcq', 'single_select'].includes(q.type)) {
+      let correctText = q.correct_answer;
+      const optsArr = Array.isArray(q.options_json) ? q.options_json : (q.options_json?.options || []);
+      const parsedIdx = parseInt(q.correct_answer || '', 10);
+      if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < optsArr.length) {
+        const opt = optsArr[parsedIdx];
+        correctText = typeof opt === 'object' && opt !== null && 'text' in opt ? opt.text : String(opt);
+      }
+
+      const pointsEarned = (answer === correctText || answer === q.correct_answer) ? qPoints : 0;
+      await prisma.testResponse.update({
+        where: { id: resp.id },
+        data: {
+          points_earned: pointsEarned,
+          is_correct: pointsEarned === qPoints,
+          evaluation_status: 'COMPLETED'
+        }
+      });
+    } else if (q.type === 'multi_select') {
+      let pointsEarned = 0;
+      try {
+        const studentArr = JSON.parse(answer || '[]');
+        const correctIndices = JSON.parse(q.correct_answer || '[]');
+
+        const optsArr = Array.isArray(q.options_json) ? q.options_json : (q.options_json?.options || []);
+        const correctTexts = correctIndices.map((idxVal: any) => {
+          const parsedIdx = parseInt(String(idxVal), 10);
+          if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < optsArr.length) {
+            const opt = optsArr[parsedIdx];
+            return typeof opt === 'object' && opt !== null && 'text' in opt ? opt.text : String(opt);
+          }
+          return String(idxVal);
+        });
+
+        if (Array.isArray(studentArr)) {
+          const isExactMatch = studentArr.length === correctTexts.length &&
+            studentArr.every((v: string) => correctTexts.includes(v));
+          if (isExactMatch) {
+            pointsEarned = qPoints;
+          }
+        }
+      } catch (e) {
+        console.error('[Multi Select Eval Error]', e);
+      }
+      await prisma.testResponse.update({
+        where: { id: resp.id },
+        data: {
+          points_earned: pointsEarned,
+          is_correct: pointsEarned === qPoints,
+          evaluation_status: 'COMPLETED'
+        }
+      });
+    }
+  }
+
+  // Recalculate immediate score with objective points
+  const initialScore = await recalculateTestScore(testId);
+
+  // Trigger background AI evaluations if there are pending subjective items
+  if (evalPayloads.length > 0) {
+    processBackgroundEvaluations(evalPayloads, testId).catch(err => {
+      console.error('[Background Evaluation Error]', err);
+    });
+  }
+
+  return initialScore;
+}

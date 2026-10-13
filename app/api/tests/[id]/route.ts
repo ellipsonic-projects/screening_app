@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { gradePersistedTestResponses } from '@/lib/services/evaluation-pipeline';
 
 export async function GET(
   request: NextRequest,
@@ -85,14 +86,34 @@ export async function GET(
       const diffMs = Date.now() - lastPingTime;
       // 3 minutes = 180000 ms
       if (diffMs > 180000) {
-        // Mark as auto-submitted on the backend
-        test = await prisma.test.update({
-          where: { id: test.id },
+        // Atomic transition to prevent race conditions and duplicate evaluations
+        const updated = await prisma.test.updateMany({
+          where: {
+            id: test.id,
+            status: 'in_progress',
+            is_completed: false
+          },
           data: {
             status: 'auto_submitted',
             is_completed: true,
             end_time: new Date(),
             updated_at: new Date()
+          }
+        });
+
+        if (updated.count > 0) {
+          try {
+            await gradePersistedTestResponses(test.id);
+          } catch (evalErr) {
+            console.error('[Auto-submit Evaluation Error]', evalErr);
+          }
+        }
+
+        // Re-fetch the updated test with its latest evaluation results & score
+        const refreshedTest = await prisma.test.findFirst({
+          where: {
+            id: id,
+            student_id: test.student_id
           },
           include: {
             test_questions: {
@@ -103,10 +124,18 @@ export async function GET(
                 sequence_number: 'asc'
               }
             },
-            test_responses: true
+            test_responses: true,
+            student: {
+              include: {
+                user: { select: { email: true } }
+              }
+            }
           }
         });
 
+        if (refreshedTest) {
+          test = refreshedTest;
+        }
       }
     }
 
