@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/auth/verify
  * Verify the JWT token and return user information

@@ -1,13 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import nodemailer from 'nodemailer';
 import prisma from '@/lib/prisma';
 import { successResponse, errorResponse, HTTP_STATUS, createResponse } from '@/lib/api-response';
-
-// Global cache for OTPs to avoid database schema changes
-const globalForOTP = global as unknown as { otpCache: Map<string, { otp: string, expires: number }> };
-if (!globalForOTP.otpCache) {
-  globalForOTP.otpCache = new Map();
-}
+import { setCachedOTP, clearCachedOTP } from '@/lib/otp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,10 +24,7 @@ export async function POST(request: NextRequest) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     
     // Store in memory (expires in 10 minutes)
-    globalForOTP.otpCache.set(email.toLowerCase(), {
-      otp,
-      expires: Date.now() + 10 * 60 * 1000
-    });
+    setCachedOTP(email, otp);
 
     try {
       // Initialize SMTP Transporter
@@ -75,14 +67,13 @@ export async function POST(request: NextRequest) {
         html: emailHtml,
       });
 
-
       return createResponse(successResponse(null, 'OTP sent successfully to your email address.'), HTTP_STATUS.OK);
       
     } catch (emailError: any) {
       console.error('[Primary SMTP Error]', emailError);
       
       // Clear the cached OTP since the email failed to send
-      globalForOTP.otpCache.delete(email.toLowerCase());
+      clearCachedOTP(email);
 
       return createResponse(
         errorResponse('INTERNAL_ERROR', 'Failed to deliver OTP email: ' + (emailError.message || 'Unknown error')), 
@@ -93,18 +84,4 @@ export async function POST(request: NextRequest) {
     console.error('[OTP Global Error]', error);
     return createResponse(errorResponse('INTERNAL_ERROR', 'Failed to process request.'), HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
-}
-
-export function getCachedOTP(email: string): string | null {
-  const data = globalForOTP.otpCache.get(email.toLowerCase());
-  if (!data) return null;
-  if (Date.now() > data.expires) {
-    globalForOTP.otpCache.delete(email.toLowerCase());
-    return null;
-  }
-  return data.otp;
-}
-
-export function clearCachedOTP(email: string) {
-  globalForOTP.otpCache.delete(email.toLowerCase());
 }
