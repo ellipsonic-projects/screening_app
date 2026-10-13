@@ -1,8 +1,8 @@
 import { StudentDashboard } from '@/components/student/dashboard';
 
 export const metadata = {
-  title: 'Dashboard - Aptitude Portal',
-  description: 'Student dashboard',
+  title: 'Candidate Dashboard - EllipHire Aptitude Screening',
+  description: 'View your screening assessments and current candidate progress',
 };
 
 export default function DashboardPage() {

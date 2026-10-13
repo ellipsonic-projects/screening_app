@@ -116,7 +116,9 @@ export async function GET(
     const formattedTest = {
       id: test.id,
       student_id: test.student_id,
-      status: test.status,
+      status: (test.is_completed && test.status === 'in_progress') ? 'submitted' : test.status,
+      is_completed: test.is_completed,
+      isCompleted: test.is_completed,
       score: showResults ? (test.score !== null ? Number(test.score) : null) : null,
       results_published: test.results_published,
       start_time: test.start_time,
@@ -243,8 +245,24 @@ export async function PATCH(
       return NextResponse.json({ message: 'Test evaluated successfully', test });
     }
 
+    const existingTest = await prisma.test.findUnique({
+      where: { id },
+      select: { start_time: true, status: true, is_completed: true }
+    });
+
+    if (!existingTest) {
+      return NextResponse.json({ message: 'Test not found' }, { status: 404 });
+    }
+
+    if (status === 'in_progress' && (existingTest.is_completed || existingTest.status === 'submitted' || existingTest.status === 'auto_submitted')) {
+      return NextResponse.json(
+        { message: 'Assessment has already been completed and cannot be restarted', status: existingTest.status },
+        { status: 409 }
+      );
+    }
+
     const updateData: any = { status };
-    if (status === 'in_progress') {
+    if (status === 'in_progress' && !existingTest?.start_time) {
       updateData.start_time = new Date();
     }
 

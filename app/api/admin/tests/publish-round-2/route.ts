@@ -27,7 +27,8 @@ function sortAndShuffleQuestions(questions: any[]) {
     grouped[s].sort(() => 0.5 - Math.random());
   });
 
-  const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Handle both '&' and '_AND_' in section names seamlessly
+  const normalize = (name: string) => name.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
   
   const finalQuestions: any[] = [];
   
@@ -47,7 +48,6 @@ function sortAndShuffleQuestions(questions: any[]) {
 }
 
 export async function POST(request: NextRequest) {
-
   try {
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -61,8 +61,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Only admins can publish tests' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { studentIds, questionIds, totalDuration } = body;
+    const body = await request.json().catch(() => ({}));
+    const { studentIds, questionIds } = body;
+
+    // Support both totalDuration and durationMinutes
+    const rawDuration = body.totalDuration ?? body.durationMinutes;
+    const totalDuration = typeof rawDuration === 'string' ? parseInt(rawDuration, 10) : Number(rawDuration);
+
+    if (!rawDuration || isNaN(totalDuration) || totalDuration <= 0) {
+      return NextResponse.json(
+        { message: 'Invalid test duration. Duration must be a positive number of minutes.' },
+        { status: 400 }
+      );
+    }
 
     if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
       return NextResponse.json({ message: 'No students selected' }, { status: 400 });
@@ -72,32 +83,89 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'No questions selected for Round 2' }, { status: 400 });
     }
 
-    if (!totalDuration || typeof totalDuration !== 'number' || totalDuration <= 0) {
-      return NextResponse.json({ message: 'Invalid test duration' }, { status: 400 });
+    const uniqueStudentIds = Array.from(new Set(studentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)));
+    const uniqueQuestionIds = Array.from(new Set(questionIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)));
+
+    if (uniqueStudentIds.length === 0) {
+      return NextResponse.json({ message: 'Invalid student IDs provided' }, { status: 400 });
     }
 
-    let publishedCount = 0;
+    if (uniqueQuestionIds.length === 0) {
+      return NextResponse.json({ message: 'Invalid question IDs provided' }, { status: 400 });
+    }
 
-    // Fetch question details for sections
+    // Validate students exist in database
+    const existingStudents = await prisma.student.findMany({
+      where: { id: { in: uniqueStudentIds } },
+      select: { id: true, full_name: true }
+    });
+
+    if (existingStudents.length === 0) {
+      return NextResponse.json({ message: 'No valid students found for the provided student IDs' }, { status: 400 });
+    }
+
+    if (existingStudents.length !== uniqueStudentIds.length) {
+      return NextResponse.json({ message: 'One or more selected students do not exist' }, { status: 400 });
+    }
+
+    // Validate questions exist in database
     const questions = await prisma.question.findMany({
-      where: { id: { in: questionIds } },
+      where: { id: { in: uniqueQuestionIds } },
       select: { id: true, section: true }
     });
 
-    for (const studentId of studentIds) {
-      // Shuffle the selected questions by section order for each student
-      const shuffled = sortAndShuffleQuestions(questions);
+    if (questions.length === 0) {
+      return NextResponse.json({ message: 'No valid questions found for the provided question IDs' }, { status: 400 });
+    }
 
-      await prisma.$transaction(async (tx) => {
-        const test = await tx.test.create({
-          data: {
-            student_id: studentId,
-            total_duration: totalDuration,
-            status: 'not_started',
+    if (questions.length !== uniqueQuestionIds.length) {
+      return NextResponse.json({ message: 'One or more selected questions do not exist in the question bank' }, { status: 400 });
+    }
+
+    // Atomic transaction across all students
+    let publishedCount = 0;
+    let alreadyAssignedCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const student of existingStudents) {
+        // Deduplication: Check if an unstarted test with the exact same questions already exists for this student
+        const existingPendingTests = await tx.test.findMany({
+          where: {
+            student_id: student.id,
+            status: 'not_started'
+          },
+          include: {
+            test_questions: {
+              select: { question_id: true }
+            }
           }
         });
 
-        // Link questions
+        const isDuplicate = existingPendingTests.some((t) => {
+          const existingQIds = new Set(t.test_questions.map((tq) => tq.question_id));
+          return (
+            existingQIds.size === uniqueQuestionIds.length &&
+            uniqueQuestionIds.every((qId) => existingQIds.has(qId))
+          );
+        });
+
+        if (isDuplicate) {
+          alreadyAssignedCount++;
+          continue;
+        }
+
+        // Shuffle questions in section order for the student
+        const shuffled = sortAndShuffleQuestions(questions);
+
+        const test = await tx.test.create({
+          data: {
+            student_id: student.id,
+            total_duration: totalDuration,
+            status: 'not_started',
+            is_completed: false,
+          }
+        });
+
         await tx.testQuestion.createMany({
           data: shuffled.map((q, index) => ({
             test_id: test.id,
@@ -105,14 +173,32 @@ export async function POST(request: NextRequest) {
             sequence_number: index + 1
           }))
         });
-      });
-      
-      publishedCount++;
+
+        publishedCount++;
+      }
+
+      // Mark questions as published
+      if (publishedCount > 0) {
+        await tx.question.updateMany({
+          where: { id: { in: uniqueQuestionIds } },
+          data: { is_published: true }
+        });
+      }
+    });
+
+    if (publishedCount === 0 && alreadyAssignedCount > 0) {
+      return NextResponse.json({
+        message: `Round 2 test is already published for the selected student${alreadyAssignedCount > 1 ? 's' : ''}`,
+        publishedCount: 0,
+        alreadyAssignedCount
+      }, { status: 200 });
     }
 
     return NextResponse.json({ 
-      message: `Round 2 tests successfully published for ${publishedCount} students` 
-    });
+      message: `Round 2 tests successfully published for ${publishedCount} student${publishedCount > 1 ? 's' : ''}${alreadyAssignedCount > 0 ? ` (${alreadyAssignedCount} already had this test assigned)` : ''}`,
+      publishedCount,
+      alreadyAssignedCount
+    }, { status: 200 });
 
   } catch (error: any) {
     console.error('[Publish Round 2 Error]', error);

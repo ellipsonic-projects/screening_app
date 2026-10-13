@@ -230,10 +230,13 @@ export async function POST(
 
     if (action === 'submit') {
       if (test.is_completed || test.status === 'submitted' || test.status === 'auto_submitted') {
-        return NextResponse.json({ message: 'Test already submitted' }, { status: 400 });
+        return NextResponse.json({ message: 'Test has already been submitted', status: test.status }, { status: 409 });
       }
 
       const data = await request.json().catch(() => ({}));
+      if (!data.assessmentId && id) {
+        data.assessmentId = id;
+      }
 
       const validationResult = SubmitTestResponseSchema.safeParse(data);
       if (!validationResult.success) {

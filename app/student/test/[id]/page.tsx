@@ -1,8 +1,8 @@
 import { TestInterface } from '@/components/test/test-interface';
 
 export const metadata = {
-  title: 'Test - Aptitude Portal',
-  description: 'Take the aptitude test',
+  title: 'Assessment Instructions - EllipHire Aptitude Screening',
+  description: 'Review assessment instructions and proctoring rules before starting your screening test',
 };
 
 export default async function TestPage({ params }: { params: Promise<{ id: string }> }) {

@@ -479,6 +479,7 @@ export function StudentsViewer() {
       const payload = {
         studentIds: Array.from(selectedStudentIds),
         questionIds: Array.from(selectedRound2QuestionIds),
+        totalDuration: round2Duration,
         durationMinutes: round2Duration,
         testTitle: 'Round 2 Technical Interview Assessment'
       };

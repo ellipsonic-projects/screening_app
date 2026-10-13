@@ -23,7 +23,7 @@ export function RegisterForm() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<RegisterInput>({
+  } = useForm<any>({
     resolver: zodResolver(RegisterSchema),
   });
 

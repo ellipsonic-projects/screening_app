@@ -32,6 +32,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkAuth();
   }, []);
 
+  // Set up response interceptor to automatically evict stale tokens on 401
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      (err) => {
+        if (err.response?.status === 401) {
+          localStorage.removeItem('token');
+          setUser(null);
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, []);
+
   const checkAuth = async () => {
     try {
       const token = localStorage.getItem('token');
