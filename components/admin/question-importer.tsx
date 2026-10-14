@@ -23,18 +23,9 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
 
-const SUPPORTED_SECTIONS = [
-  'Aptitude',
-  'Coding',
-  'Problem Solving',
-  'AI Literacy',
-  'Communication & Teamwork',
-  'Execution & Reliability',
-  'Attitude & Ownership',
-  'Integrity',
-  'Learning Aptitude',
-  'Eligibility'
-];
+import { canonicalizeCategory, SUPPORTED_IMPORT_SECTIONS, SUPPORTED_DISPLAY_LABELS } from '@/lib/categories';
+
+const SUPPORTED_SECTIONS = SUPPORTED_IMPORT_SECTIONS;
 
 export function QuestionImporter() {
   const router = useRouter();
@@ -89,20 +80,19 @@ export function QuestionImporter() {
         const rowIndex = i + 2; // Excel row number (1-based + 1 for header)
         
         try {
-          const payload = mapRowToPayload(row, rowIndex);
-          
           // Validate Section
-          const sectionVal = row['Section'] || payload.section || '';
-          const formattedSection = String(sectionVal).trim();
-          const isSectionValid = SUPPORTED_SECTIONS.some(s => s.toLowerCase() === formattedSection.toLowerCase());
+          const rawSectionVal = row['Section'] || row['section'] || '';
+          const canonical = canonicalizeCategory(rawSectionVal);
           
-          if (!isSectionValid) {
+          if (!canonical) {
             skipped.push({
               row: rowIndex,
-              reason: `Invalid Section: ${formattedSection || 'Empty'}`
+              reason: `Invalid Section: "${rawSectionVal || 'Empty'}". Supported categories: ${SUPPORTED_DISPLAY_LABELS.join(', ')}`
             });
             continue;
           }
+
+          const payload = mapRowToPayload(row, rowIndex);
 
           const rowData: any = { ...payload };
           delete rowData._rowIndex;
@@ -198,7 +188,7 @@ export function QuestionImporter() {
       { header: 'Marks', key: 'marks', width: 10 }
     ];
     sheet.addRow({
-      section: 'Aptitude',
+      section: 'Quantitative & Logical Reasoning',
       question: 'What is 2+2?',
       optionA: '2',
       optionB: '3',
@@ -218,7 +208,7 @@ export function QuestionImporter() {
       { header: 'Question', key: 'question', width: 40 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Coding', question: 'Write a program to reverse a string', marks: '5' });
+    sheet.addRow({ section: 'Coding & Debugging', question: 'Write a program to reverse a string', marks: '5' });
     await triggerDownload(workbook, 'coding-template.xlsx');
   };
 
@@ -232,7 +222,7 @@ export function QuestionImporter() {
       { header: 'Maximum Words', key: 'maxWords', width: 15 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Communication & Teamwork', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '5' });
+    sheet.addRow({ section: 'Written Communication & Collaboration', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '5' });
     await triggerDownload(workbook, 'open-text-template.xlsx');
   };
 
@@ -247,8 +237,8 @@ export function QuestionImporter() {
       { header: 'Field 3 Label', key: 'field3', width: 20 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Execution & Reliability', question: 'How would you complete this project in three days?', field1: 'Day 1', field2: 'Day 2', field3: 'Day 3', marks: '5' });
-    sheet.addRow({ section: 'AI Literacy', question: 'Design an AI chatbot.', field1: 'Problem', field2: 'Solution', field3: 'Outcome', marks: '5' });
+    sheet.addRow({ section: 'Delivery & Dependability', question: 'How would you complete this project in three days?', field1: 'Day 1', field2: 'Day 2', field3: 'Day 3', marks: '5' });
+    sheet.addRow({ section: 'AI Literacy & Responsible Use', question: 'Design an AI chatbot.', field1: 'Problem', field2: 'Solution', field3: 'Outcome', marks: '5' });
     await triggerDownload(workbook, 'structured-template.xlsx');
   };
 
@@ -346,7 +336,7 @@ export function QuestionImporter() {
                     <FileSpreadsheet className="w-4 h-4" />
                   </div>
                   <h4 className="font-bold text-slate-900 text-xs">MCQ Template</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For Aptitude, Problem Solving & all MCQs.</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For Quantitative & Logical Reasoning, Problem Solving & all MCQs.</p>
                 </div>
                 <div className="mt-2.5 flex items-center text-[11px] font-semibold text-[#1760FF]">
                   <Download className="w-3 h-3 mr-1" /> Download
@@ -363,7 +353,7 @@ export function QuestionImporter() {
                     <FileCode2 className="w-4 h-4" />
                   </div>
                   <h4 className="font-bold text-slate-900 text-xs">Coding Template</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For programming & coding challenges.</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For Coding & Debugging challenges.</p>
                 </div>
                 <div className="mt-2.5 flex items-center text-[11px] font-semibold text-indigo-600">
                   <Download className="w-3 h-3 mr-1" /> Download
@@ -380,7 +370,7 @@ export function QuestionImporter() {
                     <FileText className="w-4 h-4" />
                   </div>
                   <h4 className="font-bold text-slate-900 text-xs">Open Text Template</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For AI Literacy, Comms & Attitude.</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For AI Literacy & Responsible Use, Collaboration & Ownership.</p>
                 </div>
                 <div className="mt-2.5 flex items-center text-[11px] font-semibold text-emerald-600">
                   <Download className="w-3 h-3 mr-1" /> Download
@@ -397,7 +387,7 @@ export function QuestionImporter() {
                     <LayoutTemplate className="w-4 h-4" />
                   </div>
                   <h4 className="font-bold text-slate-900 text-xs">Structured Template</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For multi-field & execution questions.</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For Delivery & Dependability and multi-field questions.</p>
                 </div>
                 <div className="mt-2.5 flex items-center text-[11px] font-semibold text-amber-600">
                   <Download className="w-3 h-3 mr-1" /> Download

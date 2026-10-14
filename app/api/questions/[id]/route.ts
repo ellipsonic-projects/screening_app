@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { QuestionSchema } from '@/lib/validators';
+import { canonicalizeCategory } from '@/lib/categories';
 
 export async function DELETE(
   request: NextRequest,
@@ -112,6 +113,9 @@ export async function PUT(
     }
     
     const validatedData = validationResult.data;
+    const rawSection = validatedData.section;
+    const canonicalSection = rawSection ? (canonicalizeCategory(rawSection) || rawSection) : undefined;
+
     const question = await prisma.question.update({
       where: { id },
       data: {
@@ -123,13 +127,11 @@ export async function PUT(
         points: validatedData.points,
         explanation: validatedData.explanation,
         is_published: validatedData.isPublished,
-        assessment_dimension: validatedData.assessmentDimension,
         weight: validatedData.weight,
-        expected_answer_length: validatedData.expectedAnswerLength,
         expected_duration: validatedData.expectedDuration,
         is_required: validatedData.isRequired,
         display_order: validatedData.displayOrder,
-        section: validatedData.section,
+        section: canonicalSection,
         section_order: validatedData.sectionOrder,
         question_order: validatedData.questionOrder,
       }

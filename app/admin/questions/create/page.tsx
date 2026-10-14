@@ -29,16 +29,16 @@ import {
 
 // --- Configuration Data ---
 const ASSESSMENTS = [
-  { id: 'APTITUDE', title: 'Aptitude', desc: 'Quantitative Ability, Logical Reasoning, Verbal Ability.', icon: <Brain className="w-4 h-4" /> },
-  { id: 'CODING', title: 'Coding', desc: 'Programming Challenges and Coding MCQs.', icon: <Code className="w-4 h-4" /> },
-  { id: 'ELIGIBILITY', title: 'Eligibility', desc: 'Screening questions to determine candidate eligibility.', icon: <ClipboardList className="w-4 h-4" /> },
-  { id: 'ATTITUDE_AND_OWNERSHIP', title: 'Attitude & Ownership', desc: 'Evaluate candidate ownership and attitude.', icon: <Users className="w-4 h-4" /> },
-  { id: 'LEARNING_APTITUDE', title: 'Learning Aptitude', desc: 'Evaluate learning agility and comprehension.', icon: <GraduationCap className="w-4 h-4" /> },
-  { id: 'PROBLEM_SOLVING', title: 'Problem Solving', desc: 'Assess problem solving strategies and logic.', icon: <Brain className="w-4 h-4" /> },
-  { id: 'EXECUTION_AND_RELIABILITY', title: 'Execution & Reliability', desc: 'Evaluate task execution and planning.', icon: <Settings className="w-4 h-4" /> },
-  { id: 'COMMUNICATION_AND_TEAMWORK', title: 'Communication & Teamwork', desc: 'Assess written communication and teamwork.', icon: <MessageSquare className="w-4 h-4" /> },
-  { id: 'INTEGRITY', title: 'Integrity', desc: 'Evaluate ethical behavior and integrity.', icon: <Shield className="w-4 h-4" /> },
-  { id: 'AI_LITERACY', title: 'AI Literacy', desc: 'Assess prompt engineering and AI tool proficiency.', icon: <Bot className="w-4 h-4" /> }
+  { id: 'APTITUDE', title: 'Quantitative & Logical Reasoning', desc: 'Quantitative Ability, Logical Reasoning, Verbal Ability.', icon: <Brain className="w-4 h-4" /> },
+  { id: 'CODING', title: 'Coding & Debugging', desc: 'Programming Challenges and Coding MCQs.', icon: <Code className="w-4 h-4" /> },
+  { id: 'ELIGIBILITY', title: 'Eligibility & Logistics (Unscored)', desc: 'Screening questions to determine candidate eligibility.', icon: <ClipboardList className="w-4 h-4" /> },
+  { id: 'ATTITUDE_AND_OWNERSHIP', title: 'Ownership & Initiative', desc: 'Evaluate candidate ownership and attitude.', icon: <Users className="w-4 h-4" /> },
+  { id: 'LEARNING_APTITUDE', title: 'Learning Agility', desc: 'Evaluate learning agility and comprehension.', icon: <GraduationCap className="w-4 h-4" /> },
+  { id: 'PROBLEM_SOLVING', title: 'Problem Solving & System Design', desc: 'Assess problem solving strategies and logic.', icon: <Brain className="w-4 h-4" /> },
+  { id: 'EXECUTION_AND_RELIABILITY', title: 'Delivery & Dependability', desc: 'Evaluate task execution and planning.', icon: <Settings className="w-4 h-4" /> },
+  { id: 'COMMUNICATION_AND_TEAMWORK', title: 'Written Communication & Collaboration', desc: 'Assess written communication and teamwork.', icon: <MessageSquare className="w-4 h-4" /> },
+  { id: 'INTEGRITY', title: 'Ethics & Judgment', desc: 'Evaluate ethical behavior and integrity.', icon: <Shield className="w-4 h-4" /> },
+  { id: 'AI_LITERACY', title: 'AI Literacy & Responsible Use', desc: 'Assess prompt engineering and AI tool proficiency.', icon: <Bot className="w-4 h-4" /> }
 ];
 
 const QUESTION_TYPES: Record<string, Array<{ id: string, label: string }>> = {

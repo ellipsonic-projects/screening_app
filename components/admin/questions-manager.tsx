@@ -36,6 +36,14 @@ import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import { toast } from 'react-hot-toast';
 import { BrandLogo } from '@/components/common/BrandLogo';
+import { 
+  canonicalizeCategory, 
+  getCategoryLabel, 
+  SUPPORTED_IMPORT_SECTIONS, 
+  SUPPORTED_DISPLAY_LABELS,
+  CATEGORIES,
+  CATEGORY_ORDER
+} from '@/lib/categories';
 
 export function QuestionsManager() {
   const { logout } = useAuth();
@@ -70,11 +78,7 @@ export function QuestionsManager() {
   const [templateType, setTemplateType] = useState<'mcq' | 'coding' | 'open_text' | 'structured_response'>('mcq');
   const [importSummary, setImportSummary] = useState<{ imported: number, duplicates: number, invalidSection: number, missingFields: number, total: number, skippedDetails: {row: number, reason: string}[] } | null>(null);
 
-  const SUPPORTED_SECTIONS = [
-    'Aptitude', 'Coding', 'Problem Solving', 'AI Literacy',
-    'Communication & Teamwork', 'Execution & Reliability',
-    'Attitude & Ownership', 'Integrity', 'Learning Aptitude', 'Eligibility'
-  ];
+  const SUPPORTED_SECTIONS = SUPPORTED_IMPORT_SECTIONS;
 
   useEffect(() => {
     loadQuestions();
@@ -186,7 +190,7 @@ export function QuestionsManager() {
       { header: 'Correct Answer', key: 'correct', width: 15 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Aptitude', question: 'What is 2+2?', optionA: '2', optionB: '3', optionC: '4', optionD: '5', correct: 'C', marks: '10' });
+    sheet.addRow({ section: 'Quantitative & Logical Reasoning', question: 'What is 2+2?', optionA: '2', optionB: '3', optionC: '4', optionD: '5', correct: 'C', marks: '10' });
     await triggerDownload(workbook, 'mcq-template.xlsx');
   };
 
@@ -198,7 +202,7 @@ export function QuestionsManager() {
       { header: 'Question', key: 'question', width: 40 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Coding', question: 'Write a program to reverse a string', marks: '15' });
+    sheet.addRow({ section: 'Coding & Debugging', question: 'Write a program to reverse a string', marks: '15' });
     await triggerDownload(workbook, 'coding-template.xlsx');
   };
 
@@ -212,7 +216,7 @@ export function QuestionsManager() {
       { header: 'Maximum Words', key: 'maxWords', width: 15 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Communication & Teamwork', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '10' });
+    sheet.addRow({ section: 'Written Communication & Collaboration', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '10' });
     await triggerDownload(workbook, 'open-text-template.xlsx');
   };
 
@@ -227,7 +231,7 @@ export function QuestionsManager() {
       { header: 'Field 3 Label', key: 'field3', width: 20 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Execution & Reliability', question: 'How would you complete this project in three days?', field1: 'Day 1', field2: 'Day 2', field3: 'Day 3', marks: '15' });
+    sheet.addRow({ section: 'Delivery & Dependability', question: 'How would you complete this project in three days?', field1: 'Day 1', field2: 'Day 2', field3: 'Day 3', marks: '15' });
     await triggerDownload(workbook, 'structured-template.xlsx');
   };
 
@@ -291,21 +295,25 @@ export function QuestionsManager() {
         json.forEach((row, idx) => {
           const rowIndex = idx + 2;
           
-          const sectionVal = row['Section'] || '';
+          const sectionVal = row['Section'] || row['section'] || '';
           const formattedSection = String(sectionVal).trim();
           
+          let sectionMap = 'APTITUDE';
           if (formattedSection) {
-            const isSectionValid = SUPPORTED_SECTIONS.some(s => s.toLowerCase() === formattedSection.toLowerCase());
-            if (!isSectionValid) {
+            const canonical = canonicalizeCategory(formattedSection);
+            if (!canonical) {
               invalidSectionCount++;
-              skippedDetails.push({ row: rowIndex, reason: `Invalid Section\nSection: ${formattedSection}\nExpected:\nAptitude\nCoding\nAI Literacy\n...` });
+              skippedDetails.push({ 
+                row: rowIndex, 
+                reason: `Invalid Section\nSection: ${formattedSection}\nExpected:\nQuantitative & Logical Reasoning\nCoding & Debugging\nEligibility & Logistics (Unscored)\n...` 
+              });
               return;
             }
+            sectionMap = canonical;
           }
 
           const questionText = row['Question'] || row['Question Text'] || row['QuestionText'] || row['Question 1'] || '';
           const points = Number(row['Points'] || row['Marks']) || 10;
-          const sectionMap = formattedSection ? formattedSection.toUpperCase().replace(/\s*&\s*/g, '_AND_').replace(/\s+/g, '_') : 'APTITUDE';
 
           if (!questionText || String(questionText).trim().length < 3) {
              missingFieldsCount++;
@@ -685,16 +693,11 @@ export function QuestionsManager() {
                 className="w-full sm:w-auto h-8.5 px-3 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50/70 text-slate-700 font-medium focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer"
               >
                 <option value="all">All Sections</option>
-                <option value="APTITUDE">Aptitude</option>
-                <option value="CODING">Coding</option>
-                <option value="ELIGIBILITY">Eligibility</option>
-                <option value="ATTITUDE_AND_OWNERSHIP">Attitude & Ownership</option>
-                <option value="LEARNING_APTITUDE">Learning Aptitude</option>
-                <option value="PROBLEM_SOLVING">Problem Solving</option>
-                <option value="EXECUTION_AND_RELIABILITY">Execution & Reliability</option>
-                <option value="COMMUNICATION_AND_TEAMWORK">Communication & Teamwork</option>
-                <option value="INTEGRITY">Integrity</option>
-                <option value="AI_LITERACY">AI Literacy</option>
+                {CATEGORY_ORDER.map((catId) => (
+                  <option key={catId} value={catId}>
+                    {CATEGORIES[catId].label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -808,7 +811,7 @@ export function QuestionsManager() {
                           </TableCell>
                           <TableCell className="w-44 py-2.5 px-3">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200/80">
-                              {(q.section || 'APTITUDE').replace(/_/g, ' ')}
+                              {getCategoryLabel(q.section)}
                             </span>
                           </TableCell>
                           <TableCell className="w-20 text-center py-2.5 px-3 text-slate-800 font-bold text-xs">
@@ -930,7 +933,7 @@ export function QuestionsManager() {
                       </div>
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 text-sm">MCQ</h4>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Aptitude & all MCQs</p>
+                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Quantitative & Logical Reasoning, MCQs</p>
                       </div>
                       <Download className="w-4 h-4 text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
@@ -941,7 +944,7 @@ export function QuestionsManager() {
                       </div>
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 text-sm">Coding</h4>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Programming questions</p>
+                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Coding & Debugging challenges</p>
                       </div>
                       <Download className="w-4 h-4 text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
@@ -952,7 +955,7 @@ export function QuestionsManager() {
                       </div>
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 text-sm">Open Text</h4>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">AI Literacy, Comms</p>
+                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Communication, Ethics & AI Literacy</p>
                       </div>
                       <Download className="w-4 h-4 text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>

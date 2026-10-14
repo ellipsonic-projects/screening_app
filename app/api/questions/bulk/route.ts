@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth';
 import { QuestionSchema } from '@/lib/validators';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
+import { canonicalizeCategory } from '@/lib/categories';
 
 const BulkInputSchema = z.array(z.any()).min(1, 'At least one question is required');
 
@@ -74,13 +75,11 @@ export async function POST(request: NextRequest) {
         time_limit_seconds: q.timeLimitSeconds,
         points: q.points,
         explanation: q.explanation,
-        assessment_dimension: q.assessmentDimension,
         weight: q.weight,
-        expected_answer_length: q.expectedAnswerLength,
         expected_duration: q.expectedDuration,
         is_required: q.isRequired,
         display_order: q.displayOrder,
-        section: q.section,
+        section: canonicalizeCategory(q.section) || q.section,
         section_order: q.sectionOrder,
         question_order: q.questionOrder,
         is_published: q.isPublished || false,

@@ -1,9 +1,10 @@
 // lib/questionMapper.ts
+import { canonicalizeCategory, isEligibilityCategory, SUPPORTED_DISPLAY_LABELS } from '@/lib/categories';
 
 export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   // Raw data from either the Excel importer or the Create Question Wizard state
   const rawType = String(rawData.type || rawData['Question Type'] || '').trim().toLowerCase();
-  const rawSection = String(rawData.section || rawData['Section'] || '').trim().toUpperCase();
+  const rawSection = String(rawData.section || rawData['Section'] || '').trim();
   
   // 1. Map to strict DB types
   let type = rawType;
@@ -13,12 +14,14 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
     type = 'open_text'; // fallback for unknown types
   }
 
-  // 2. Map to strict sections
-  let section = rawSection;
-  const ALLOWED_SECTIONS = ['APTITUDE', 'CODING', 'ELIGIBILITY', 'ATTITUDE_AND_OWNERSHIP', 'LEARNING_APTITUDE', 'PROBLEM_SOLVING', 'EXECUTION_AND_RELIABILITY', 'COMMUNICATION_AND_TEAMWORK', 'INTEGRITY', 'AI_LITERACY'];
-  if (!ALLOWED_SECTIONS.includes(section)) {
-    section = 'APTITUDE'; // fallback
+  // 2. Canonicalize section and enforce strict validation (never silently fall back)
+  const canonicalSection = canonicalizeCategory(rawSection);
+  if (!canonicalSection) {
+    throw new Error(
+      `Invalid or unrecognized category/section: "${rawSection || 'Empty'}". Supported categories: ${SUPPORTED_DISPLAY_LABELS.join(', ')}`
+    );
   }
+  const section = canonicalSection;
 
   // 3. Construct unified optionsJson object
   let optionsJson: any = {};
@@ -98,7 +101,7 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   }
 
   // 4. Construct Final Payload
-  const showsMarks = section !== 'ELIGIBILITY';
+  const showsMarks = !isEligibilityCategory(section);
   
   const payload = {
     ...(rowIndex !== undefined ? { _rowIndex: rowIndex } : {}),

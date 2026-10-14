@@ -1,55 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-
-const SECTION_ORDER = [
-  'Eligibility',
-  'Aptitude',
-  'Coding',
-  'Attitude & Ownership',
-  'Learning Aptitude',
-  'Problem Solving',
-  'Execution & Reliability',
-  'Communication & Teamwork',
-  'Integrity',
-  'AI Literacy'
-];
+import { CATEGORY_ORDER, canonicalizeCategory } from '@/lib/categories';
 
 function sortAndShuffleQuestions(questions: any[]) {
-  // Group by section
+  // Group by canonical category ID
   const grouped: Record<string, any[]> = {};
+  const uncategorized: any[] = [];
+
   questions.forEach(q => {
-    const s = q.section || 'General';
-    if (!grouped[s]) grouped[s] = [];
-    grouped[s].push(q);
+    const canonical = canonicalizeCategory(q.section);
+    if (canonical) {
+      if (!grouped[canonical]) grouped[canonical] = [];
+      grouped[canonical].push(q);
+    } else {
+      uncategorized.push(q);
+    }
   });
 
   // Shuffle within each section
   Object.keys(grouped).forEach(s => {
     grouped[s].sort(() => 0.5 - Math.random());
   });
+  uncategorized.sort(() => 0.5 - Math.random());
 
-  // Normalize section names for sorting
-  const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const normalizedOrder = SECTION_ORDER.map(normalize);
-
-  // Flatten based on exact section order
+  // Flatten based on exact canonical CATEGORY_ORDER
   const finalQuestions: any[] = [];
-
-  // First add sections that exist in the predefined order
-  SECTION_ORDER.forEach(orderedSection => {
-    // Find matching key in grouped
-    const matchingKey = Object.keys(grouped).find(k => normalize(k) === normalize(orderedSection));
-    if (matchingKey) {
-      finalQuestions.push(...grouped[matchingKey]);
-      delete grouped[matchingKey];
+  CATEGORY_ORDER.forEach(orderedCategory => {
+    if (grouped[orderedCategory]) {
+      finalQuestions.push(...grouped[orderedCategory]);
     }
   });
 
-  // Add any remaining sections that weren't in the predefined list
-  Object.keys(grouped).forEach(remainingSection => {
-    finalQuestions.push(...grouped[remainingSection]);
-  });
+  // Add any remaining uncategorized questions
+  finalQuestions.push(...uncategorized);
 
   return finalQuestions;
 }

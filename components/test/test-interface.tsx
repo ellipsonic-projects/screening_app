@@ -20,6 +20,7 @@ import {
   Award, Star, Code2, Terminal, ShieldCheck, Camera, Mic, Monitor, FileText, Send, CheckCircle2, AlertCircle, Circle, CircleDashed, Loader2,
   ChevronDown, ChevronUp, Menu, X, Info
 } from 'lucide-react';
+import { getCategoryLabel, canonicalizeCategory } from '@/lib/categories';
 
 interface Question {
   id: string;
@@ -603,28 +604,35 @@ export function TestInterface({ testId }: { testId: string }) {
 
   const formatSectionName = (name: string): string => {
     if (!name) return 'General';
-    const clean = name.replace(/_AND_/gi, ' & ').replace(/_/g, ' ');
-    return clean
-      .split(' ')
-      .map((word) => {
-        if (word === '&') return '&';
-        if (word.toUpperCase() === 'AI') return 'AI';
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      })
-      .join(' ');
+    return getCategoryLabel(name);
   };
 
   const getSectionIcon = (sectionName: string) => {
-    const sNameUpper = (sectionName || '').toUpperCase();
-    if (sNameUpper.includes('PROBLEM')) return Puzzle;
-    if (sNameUpper.includes('INTEGRITY')) return Shield;
-    if (sNameUpper.includes('AI') || sNameUpper.includes('LITERACY')) return Sparkles;
-    if (sNameUpper.includes('COMMUNICATION') || sNameUpper.includes('TEAMWORK')) return Users;
-    if (sNameUpper.includes('EXECUTION')) return Briefcase;
-    if (sNameUpper.includes('CODE') || sNameUpper.includes('CODING')) return Code2;
-    if (sNameUpper.includes('LEARNING')) return BookOpen;
-    if (sNameUpper.includes('ATTITUDE') || sNameUpper.includes('OWNERSHIP')) return UserCheck;
-    return LayoutGrid;
+    const canonical = canonicalizeCategory(sectionName);
+    switch (canonical) {
+      case 'PROBLEM_SOLVING':
+        return Puzzle;
+      case 'INTEGRITY':
+        return Shield;
+      case 'AI_LITERACY':
+        return Sparkles;
+      case 'COMMUNICATION_AND_TEAMWORK':
+        return Users;
+      case 'EXECUTION_AND_RELIABILITY':
+        return Briefcase;
+      case 'CODING':
+        return Code2;
+      case 'LEARNING_APTITUDE':
+        return BookOpen;
+      case 'ATTITUDE_AND_OWNERSHIP':
+        return UserCheck;
+      case 'ELIGIBILITY':
+        return ShieldCheck;
+      case 'APTITUDE':
+        return BookOpen;
+      default:
+        return LayoutGrid;
+    }
   };
 
   if (isLoading) {

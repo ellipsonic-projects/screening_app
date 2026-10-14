@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyToken } from '@/lib/auth';
+import { 
+  CATEGORIES, 
+  CATEGORY_ORDER, 
+  canonicalizeCategory, 
+  isEligibilityCategory 
+} from '@/lib/categories';
 
 export async function GET(
   req: NextRequest,
@@ -43,40 +49,22 @@ export async function GET(
       return NextResponse.json({ error: 'Test not found' }, { status: 404 });
     }
 
-    const SECTIONS = [
-      { id: 'ELIGIBILITY', label: 'Eligibility' },
-      { id: 'APTITUDE', label: 'Aptitude' },
-      { id: 'CODING', label: 'Coding' },
-      { id: 'ATTITUDE_AND_OWNERSHIP', label: 'Attitude & Ownership' },
-      { id: 'LEARNING_APTITUDE', label: 'Learning Aptitude' },
-      { id: 'PROBLEM_SOLVING', label: 'Problem Solving' },
-      { id: 'EXECUTION_AND_RELIABILITY', label: 'Execution & Reliability' },
-      { id: 'COMMUNICATION_AND_TEAMWORK', label: 'Communication & Teamwork' },
-      { id: 'INTEGRITY', label: 'Integrity' },
-      { id: 'AI_LITERACY', label: 'AI Literacy' },
-    ];
+    const SECTIONS = CATEGORY_ORDER.map(id => ({
+      id,
+      label: CATEGORIES[id].label
+    }));
 
-    const sectionScores = SECTIONS.map(sec => {
-      const responsesInSection = test.test_responses.filter(r => r.question.section === sec.id);
-      
-      const totalMarks = responsesInSection.reduce((sum, r) => sum + (r.question.points || 0), 0);
-      const marksObtained = responsesInSection.reduce((sum, r) => sum + (Number(r.points_earned) || 0), 0);
-      
-      return {
-        sectionName: sec.label,
-        marksObtained,
-        totalMarks,
-        isCompleted: test.status === 'submitted' || test.status === 'auto_submitted',
-        hasQuestions: responsesInSection.length > 0
-      };
-    }).filter(sec => sec.hasQuestions); // Only return sections they actually had questions for, or should we return all? The prompt said "Display the report section-wise in this exact order... Each section should display..." If they have no questions, maybe we shouldn't display it. Wait, the prompt says "Display the report section-wise in this exact order: 1...10". I will return all 10 sections, but maybe the frontend will handle it. No, returning all 10 is safest, but with 0/0. Wait, actually I'll just return all 10.
-    
     const finalSectionScores = SECTIONS.map(sec => {
-      const questionsInSection = test.test_questions.filter((tq: any) => tq.question.section === sec.id);
-      const responsesInSection = test.test_responses.filter(r => r.question.section === sec.id);
+      const isSecEligibility = isEligibilityCategory(sec.id);
+      const questionsInSection = test.test_questions.filter((tq: any) => 
+        canonicalizeCategory(tq.question.section) === sec.id
+      );
+      const responsesInSection = test.test_responses.filter(r => 
+        canonicalizeCategory(r.question.section) === sec.id
+      );
       
-      const totalMarks = sec.id === 'ELIGIBILITY' ? null : questionsInSection.reduce((sum: number, tq: any) => sum + (tq.question.points || 0), 0);
-      const marksObtained = sec.id === 'ELIGIBILITY' ? null : responsesInSection.reduce((sum: number, r: any) => {
+      const totalMarks = isSecEligibility ? null : questionsInSection.reduce((sum: number, tq: any) => sum + (tq.question.points || 0), 0);
+      const marksObtained = isSecEligibility ? null : responsesInSection.reduce((sum: number, r: any) => {
         const ai = r.ai_evaluation as any;
         const earned = ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined 
           ? Number(ai.obtained_marks) 
@@ -96,13 +84,13 @@ export async function GET(
     let overallMarksObtained = 0;
     
     test.test_questions.forEach((tq: any) => {
-      if (tq.question.section !== 'ELIGIBILITY') {
+      if (!isEligibilityCategory(tq.question.section)) {
         overallTotalMarks += (tq.question.points || 0);
       }
     });
 
     test.test_responses.forEach((r: any) => {
-      if (r.question.section !== 'ELIGIBILITY') {
+      if (!isEligibilityCategory(r.question.section)) {
         const ai = r.ai_evaluation as any;
         const earned = ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined 
           ? Number(ai.obtained_marks) 
@@ -119,16 +107,17 @@ export async function GET(
     // Group AI Evaluations by Section
     const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
     const aiEvaluationsBySection = SECTIONS.map(sec => {
+      const isSecEligibility = isEligibilityCategory(sec.id);
       const responsesInSection = test.test_responses.filter(r => 
-        r.question.section === sec.id && 
-        (REVIEWABLE_TYPES.includes(r.question.type) || r.question.section === 'ELIGIBILITY')
+        canonicalizeCategory(r.question.section) === sec.id && 
+        (REVIEWABLE_TYPES.includes(r.question.type) || isEligibilityCategory(r.question.section))
       );
       
       return {
         sectionName: sec.label,
         evaluations: responsesInSection.map(r => {
           const ai = r.ai_evaluation as any; // Cast safely since we included it
-          const isEligibility = r.question.section === 'ELIGIBILITY';
+          const isEligibility = isEligibilityCategory(r.question.section);
           const isAiReviewable = REVIEWABLE_TYPES.includes(r.question.type);
 
           let status: string;

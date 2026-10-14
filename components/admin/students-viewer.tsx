@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'react-hot-toast';
+import { getCategoryLabel, CATEGORIES, CATEGORY_ORDER } from '@/lib/categories';
 
 interface Student {
   id: string;
@@ -1289,16 +1290,11 @@ export function StudentsViewer() {
                   className="w-full h-8.5 px-3 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
                 >
                   <option value="all">All Sections</option>
-                  <option value="APTITUDE">Aptitude</option>
-                  <option value="CODING">Coding</option>
-                  <option value="ELIGIBILITY">Eligibility</option>
-                  <option value="ATTITUDE_AND_OWNERSHIP">Attitude & Ownership</option>
-                  <option value="LEARNING_APTITUDE">Learning Aptitude</option>
-                  <option value="PROBLEM_SOLVING">Problem Solving</option>
-                  <option value="EXECUTION_AND_RELIABILITY">Execution & Reliability</option>
-                  <option value="COMMUNICATION_AND_TEAMWORK">Communication & Teamwork</option>
-                  <option value="INTEGRITY">Integrity</option>
-                  <option value="AI_LITERACY">AI Literacy</option>
+                  {CATEGORY_ORDER.map((catId) => (
+                    <option key={catId} value={catId}>
+                      {CATEGORIES[catId].label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="w-28">
@@ -1360,7 +1356,7 @@ export function StudentsViewer() {
                           </TableCell>
                           <TableCell className="w-36 py-2 px-3">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-[#1760FF] border border-blue-100">
-                              {(q.section || 'APTITUDE').replace(/_/g, ' ')}
+                              {getCategoryLabel(q.section)}
                             </span>
                           </TableCell>
                           <TableCell className="w-20 text-center py-2 px-3 text-slate-700 font-bold text-xs">

@@ -11,6 +11,11 @@ import { LatexEditor } from '@/components/ui/latex-editor';
 import { mapQuestionPayload } from '@/lib/questionMapper';
 import { toast } from 'react-hot-toast';
 import { BrandLogo } from '@/components/common/BrandLogo';
+import { 
+  canonicalizeCategory, 
+  CATEGORIES, 
+  CATEGORY_ORDER 
+} from '@/lib/categories';
 
 export default function EditQuestionPage() {
   const router = useRouter();
@@ -103,7 +108,7 @@ export default function EditQuestionPage() {
       const q = data.question;
 
       setType(q.type || 'mcq');
-      setSection(q.section || 'APTITUDE');
+      setSection(canonicalizeCategory(q.section) || 'APTITUDE');
       setQuestionText(q.question_text || '');
       setPoints(q.points || 10);
       setAssessmentDimension(q.assessment_dimension || 'ATTITUDE');
@@ -390,17 +395,11 @@ export default function EditQuestionPage() {
                     onChange={(e) => setSection(e.target.value)}
                     className="w-full h-8.5 px-3 py-1 border border-slate-200 rounded-lg text-xs bg-slate-50/70 focus:bg-white text-slate-800 font-medium outline-none transition cursor-pointer"
                   >
-                    <option value="ELIGIBILITY">Eligibility</option>
-                    <option value="APTITUDE">Aptitude</option>
-                    <option value="CODING">Coding</option>
-                    <option value="ATTITUDE">Attitude</option>
-                    <option value="LEARNING">Learning</option>
-                    <option value="PROBLEM_SOLVING">Problem Solving</option>
-                    <option value="EXECUTION">Execution</option>
-                    <option value="COMMUNICATION">Communication</option>
-                    <option value="INTEGRITY">Integrity</option>
-                    <option value="AI_LITERACY">AI Literacy</option>
-                    <option value="PRACTICAL">Practical</option>
+                    {CATEGORY_ORDER.map((catId) => (
+                      <option key={catId} value={catId}>
+                        {CATEGORIES[catId].label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -597,13 +596,13 @@ export default function EditQuestionPage() {
                         onChange={(e) => setAssessmentDimension(e.target.value)}
                         className="w-full h-8.5 px-3 py-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-800 outline-none cursor-pointer"
                       >
-                        <option value="ATTITUDE">Attitude</option>
-                        <option value="LEARNING">Learning</option>
-                        <option value="PROBLEM_SOLVING">Problem Solving</option>
-                        <option value="EXECUTION">Execution</option>
-                        <option value="COMMUNICATION">Communication</option>
-                        <option value="INTEGRITY">Integrity</option>
-                        <option value="AI_LITERACY">AI Literacy</option>
+                        <option value="ATTITUDE">Ownership & Initiative</option>
+                        <option value="LEARNING">Learning Agility</option>
+                        <option value="PROBLEM_SOLVING">Problem Solving & System Design</option>
+                        <option value="EXECUTION">Delivery & Dependability</option>
+                        <option value="COMMUNICATION">Written Communication & Collaboration</option>
+                        <option value="INTEGRITY">Ethics & Judgment</option>
+                        <option value="AI_LITERACY">AI Literacy & Responsible Use</option>
                       </select>
                     </div>
                     <div>

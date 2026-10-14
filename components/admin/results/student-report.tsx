@@ -24,40 +24,38 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
 import { AIEvaluationCard } from './ai-evaluation-card';
+import { 
+  canonicalizeCategory, 
+  isEligibilityCategory, 
+  getCategoryLabel 
+} from '@/lib/categories';
 
 const getSectionIcon = (sectionName: string) => {
-  const lower = (sectionName || '').toLowerCase();
-  if (lower.includes('aptitude') && !lower.includes('learning')) {
-    return <Brain className="w-3.5 h-3.5 text-blue-600" />;
+  const canonical = canonicalizeCategory(sectionName);
+  switch (canonical) {
+    case 'APTITUDE':
+      return <Brain className="w-3.5 h-3.5 text-blue-600" />;
+    case 'CODING':
+      return <Code className="w-3.5 h-3.5 text-blue-600" />;
+    case 'ELIGIBILITY':
+      return <ClipboardList className="w-3.5 h-3.5 text-slate-600" />;
+    case 'ATTITUDE_AND_OWNERSHIP':
+      return <Users className="w-3.5 h-3.5 text-purple-600" />;
+    case 'LEARNING_APTITUDE':
+      return <GraduationCap className="w-3.5 h-3.5 text-teal-600" />;
+    case 'PROBLEM_SOLVING':
+      return <Settings className="w-3.5 h-3.5 text-amber-600" />;
+    case 'EXECUTION_AND_RELIABILITY':
+      return <Settings className="w-3.5 h-3.5 text-orange-600" />;
+    case 'COMMUNICATION_AND_TEAMWORK':
+      return <MessageSquare className="w-3.5 h-3.5 text-sky-600" />;
+    case 'INTEGRITY':
+      return <Shield className="w-3.5 h-3.5 text-emerald-600" />;
+    case 'AI_LITERACY':
+      return <Bot className="w-3.5 h-3.5 text-purple-600" />;
+    default:
+      return <Shield className="w-3.5 h-3.5 text-blue-600" />;
   }
-  if (lower.includes('coding')) {
-    return <Code className="w-3.5 h-3.5 text-blue-600" />;
-  }
-  if (lower.includes('eligibility')) {
-    return <ClipboardList className="w-3.5 h-3.5 text-slate-600" />;
-  }
-  if (lower.includes('attitude') || lower.includes('ownership')) {
-    return <Users className="w-3.5 h-3.5 text-purple-600" />;
-  }
-  if (lower.includes('learning')) {
-    return <GraduationCap className="w-3.5 h-3.5 text-teal-600" />;
-  }
-  if (lower.includes('problem')) {
-    return <Settings className="w-3.5 h-3.5 text-amber-600" />;
-  }
-  if (lower.includes('execution') || lower.includes('reliability')) {
-    return <Settings className="w-3.5 h-3.5 text-orange-600" />;
-  }
-  if (lower.includes('communication') || lower.includes('teamwork')) {
-    return <MessageSquare className="w-3.5 h-3.5 text-sky-600" />;
-  }
-  if (lower.includes('integrity')) {
-    return <Shield className="w-3.5 h-3.5 text-emerald-600" />;
-  }
-  if (lower.includes('ai') || lower.includes('literacy')) {
-    return <Bot className="w-3.5 h-3.5 text-purple-600" />;
-  }
-  return <Shield className="w-3.5 h-3.5 text-blue-600" />;
 };
 
 const SectionScoreCard = ({
@@ -65,10 +63,12 @@ const SectionScoreCard = ({
 }: {
   sectionName: string, marksObtained: number | null, totalMarks: number | null, isCompleted: boolean
 }) => {
-  const isEligibility = sectionName.toUpperCase() === 'ELIGIBILITY' || totalMarks === null;
+  const isEligibility = isEligibilityCategory(sectionName) || totalMarks === null;
   const percentage = (!isEligibility && totalMarks && totalMarks > 0 && marksObtained !== null) 
     ? Math.min(100, Math.max(0, (marksObtained / totalMarks) * 100)) 
     : 0;
+
+  const displayLabel = getCategoryLabel(sectionName);
 
   return (
     <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs flex flex-col justify-between min-h-[72px] hover:border-blue-300 transition-colors">
@@ -77,8 +77,8 @@ const SectionScoreCard = ({
           <div className="w-6 h-6 rounded-lg bg-slate-50 flex items-center justify-center shrink-0 border border-slate-100">
             {getSectionIcon(sectionName)}
           </div>
-          <span className="text-xs font-bold text-[#10234E] truncate" title={sectionName}>
-            {sectionName}
+          <span className="text-xs font-bold text-[#10234E] truncate" title={displayLabel}>
+            {displayLabel}
           </span>
         </div>
         {isCompleted && (
@@ -357,11 +357,11 @@ export function StudentReport() {
                         <div className="w-6 h-6 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 border border-blue-100">
                           {getSectionIcon(section.sectionName)}
                         </div>
-                        <span>{section.sectionName}</span>
+                        <span>{getCategoryLabel(section.sectionName)}</span>
                         <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
                           {section.evaluations.length} {section.evaluations.length === 1 ? 'Question' : 'Questions'}
                         </span>
-                        {section.sectionName.toUpperCase() !== 'ELIGIBILITY' && (
+                        {!isEligibilityCategory(section.sectionName) && (
                           <span className="text-[10px] font-bold text-[#1760FF] bg-[#EAF2FE] px-2 py-0.5 rounded-md border border-blue-100">
                             Avg: {avgScore} Pts
                           </span>

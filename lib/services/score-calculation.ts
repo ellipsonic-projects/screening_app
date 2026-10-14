@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { isEligibilityCategory, canonicalizeCategory } from '@/lib/categories';
 
 export async function recalculateTestScore(testId: string): Promise<number> {
   const test = await prisma.test.findUnique({
@@ -12,10 +13,10 @@ export async function recalculateTestScore(testId: string): Promise<number> {
 
   if (!test) throw new Error(`Test ${testId} not found`);
 
-  // Calculate maximum possible points for the test
+  // Calculate maximum possible points for the test (Eligibility is unscored)
   let totalPossiblePoints = 0;
   for (const tq of test.test_questions) {
-    if (tq.question.section === 'ELIGIBILITY') continue;
+    if (isEligibilityCategory(tq.question.section)) continue;
     totalPossiblePoints += tq.question.points || 0;
   }
 
@@ -35,7 +36,7 @@ export async function recalculateTestScore(testId: string): Promise<number> {
   const sectionTotals: Record<string, number> = {};
 
   for (const response of responses) {
-    if (response.question?.section === 'ELIGIBILITY') continue;
+    if (isEligibilityCategory(response.question?.section)) continue;
     
     let earned = 0;
 
@@ -49,7 +50,7 @@ export async function recalculateTestScore(testId: string): Promise<number> {
 
     if (earned > 0) {
       totalEarnedPoints += earned;
-      const section = response.question?.section || 'uncategorized';
+      const section = canonicalizeCategory(response.question?.section) || 'uncategorized';
       if (!sectionTotals[section]) sectionTotals[section] = 0;
       sectionTotals[section] += earned;
     }

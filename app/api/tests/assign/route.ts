@@ -2,46 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { z } from 'zod';
-const SECTION_ORDER = [
-  'Eligibility',
-  'Aptitude',
-  'Coding',
-  'Attitude & Ownership',
-  'Learning Aptitude',
-  'Problem Solving',
-  'Execution & Reliability',
-  'Communication & Teamwork',
-  'Integrity',
-  'AI Literacy'
-];
+import { CATEGORY_ORDER, canonicalizeCategory } from '@/lib/categories';
 
 function sortAndShuffleQuestions(questions: any[]) {
   const grouped: Record<string, any[]> = {};
+  const uncategorized: any[] = [];
+
   questions.forEach(q => {
-    const s = q.section || 'General';
-    if (!grouped[s]) grouped[s] = [];
-    grouped[s].push(q);
+    const canonical = canonicalizeCategory(q.section);
+    if (canonical) {
+      if (!grouped[canonical]) grouped[canonical] = [];
+      grouped[canonical].push(q);
+    } else {
+      uncategorized.push(q);
+    }
   });
 
   Object.keys(grouped).forEach(s => {
     grouped[s].sort(() => 0.5 - Math.random());
   });
+  uncategorized.sort(() => 0.5 - Math.random());
 
-  const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  
   const finalQuestions: any[] = [];
-  
-  SECTION_ORDER.forEach(orderedSection => {
-    const matchingKey = Object.keys(grouped).find(k => normalize(k) === normalize(orderedSection));
-    if (matchingKey) {
-      finalQuestions.push(...grouped[matchingKey]);
-      delete grouped[matchingKey];
+  CATEGORY_ORDER.forEach(orderedCategory => {
+    if (grouped[orderedCategory]) {
+      finalQuestions.push(...grouped[orderedCategory]);
     }
   });
 
-  Object.keys(grouped).forEach(remainingSection => {
-    finalQuestions.push(...grouped[remainingSection]);
-  });
+  finalQuestions.push(...uncategorized);
 
   return finalQuestions;
 }
