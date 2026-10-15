@@ -1,149 +1,192 @@
 import { EvaluationRequest } from '@/types';
+import { 
+  canonicalizeCategory, 
+  CATEGORIES, 
+  CanonicalCategoryId, 
+  isEligibilityCategory 
+} from '@/lib/categories';
+import { 
+  getCriteriaForQuestion, 
+  allocateCriterionMarks, 
+  AllocatedCriterion 
+} from '@/lib/evaluation/criteria-registry';
 
+const SUPPORTED_SUBJECTIVE_TYPES = [
+  'coding',
+  'code_review',
+  'open_text',
+  'open_response',
+  'essay',
+  'structured_response',
+  'scenario',
+  'case_study',
+  'ai_scenario'
+];
+
+/**
+ * Dynamically selects and builds the evaluation prompt combining:
+ * 1. The canonical category's predefined criteria and assessment goals.
+ * 2. The question type's operational instructions (e.g. coding static inspection vs structured fields).
+ * 3. Question metadata (constraints, sample input/output, fields, scenario context).
+ * 4. Deterministic criterion mark allocations summing strictly to maxMarks.
+ * 5. Strict structured JSON output schema.
+ */
 export function getEvaluationPrompt(request: EvaluationRequest): string {
-  const { questionType } = request;
+  const rawSection = request.section || '';
+  const rawType = (request.questionType || '').trim().toLowerCase();
 
-  switch (questionType) {
-    case 'coding':
-      return getCodingPrompt(request);
-    case 'code_review':
-      return getCodeReviewPrompt(request);
-    case 'open_response':
-    case 'essay':
-    case 'open_text':
-      return getOpenResponsePrompt(request);
-    case 'structured_response':
-      return getStructuredResponsePrompt(request);
-    default:
-      return getOpenResponsePrompt(request);
+  // 1. Guard against unscored Eligibility category
+  if (isEligibilityCategory(rawSection)) {
+    throw new Error(
+      `Eligibility questions are unscored and must never be routed to the AI evaluation engine.`
+    );
   }
+
+  // 2. Validate category
+  const canonicalCategory = canonicalizeCategory(rawSection);
+  if (!canonicalCategory) {
+    throw new Error(
+      `Unsupported or unrecognized category: "${rawSection || 'Missing'}". Cannot select evaluation criteria.`
+    );
+  }
+
+  // 3. Validate supported question type
+  const isSubjectiveType = SUPPORTED_SUBJECTIVE_TYPES.includes(rawType);
+  if (!isSubjectiveType) {
+    throw new Error(
+      `Unsupported question type: "${rawType}" for subjective AI evaluation in section "${canonicalCategory}". Objective types must use deterministic grading.`
+    );
+  }
+
+  // 4. Retrieve predefined criteria for this category and type
+  const criteria = getCriteriaForQuestion(canonicalCategory, rawType);
+  if (!criteria || criteria.length === 0) {
+    throw new Error(
+      `No predefined evaluation criteria registered for category "${canonicalCategory}" and question type "${rawType}".`
+    );
+  }
+
+  // 5. Deterministically allocate criterion marks against question maximum
+  const allocatedCriteria = allocateCriterionMarks(criteria, request.maxMarks);
+
+  // 6. Build composable prompt
+  return buildPromptContent(request, canonicalCategory, rawType, allocatedCriteria);
 }
 
-function getBaseInstructions(request: EvaluationRequest): string {
-  let instructions = `You are an expert examiner evaluating a student's answer.
-Analyze the submission and respond STRICTLY in valid JSON format matching this schema, without any markdown formatting or extra text:
+function buildPromptContent(
+  request: EvaluationRequest,
+  category: CanonicalCategoryId,
+  questionType: string,
+  allocatedCriteria: AllocatedCriterion[]
+): string {
+  const categoryMeta = CATEGORIES[category];
+  const isCoding = questionType === 'coding';
+  const isCodeReview = questionType === 'code_review';
+  const isStructured = questionType === 'structured_response';
 
-The AI must meticulously evaluate the answer based on four core pillars:
-1. Correctness: Is the answer factually and logically accurate?
-2. Completeness: Does the answer address all parts of the question?
-3. Relevance: Is the answer directly related to the prompt without unnecessary filler?
-4. Quality: Is the answer well-structured, professional, and clear?
+  // Section 1: Role & Purpose
+  let roleHeader = `You are an expert technical and professional examiner for the "${categoryMeta.label}" assessment section.\n`;
+  roleHeader += `Section Focus: ${categoryMeta.description}\n`;
 
-{
-  "evaluationStatus": "string", // EXACTLY ONE OF: "Correct", "Partially Correct", "Incorrect"
-  "marksAwarded": number, // Score awarded (integer or decimal up to 1 decimal place)
-  "feedback": "string", // Overall feedback
-  "strengths": ["string"], // List of 1-3 strengths in the answer
-  "weaknesses": ["string"], // List of any weaknesses
-  "deductionReasons": ["string"], // List of specific reasons marks were deducted
-  "suggestions": ["string"] // List of 1-3 suggestions for improvement
-}
-
-Maximum Marks Possible: ${request.maxMarks}
+  // Section 2: Question-Type Specific Instructions & Execution Telemetry Notice
+  let typeInstructions = '';
+  if (isCoding) {
+    typeInstructions = `
+CRITICAL CODING EVALUATION CONSTRAINTS:
+1. STATIC CODE INSPECTION ONLY: You are performing a static code review. You DO NOT have live execution results or compiler outputs for this submission.
+2. DO NOT state or claim that the code "passed all test cases" or "executed successfully". Instead, explain whether the logic and edge case handling appear functionally sound and compliant based on static inspection.
+3. Review algorithmic logic, syntax correctness, time/space complexity, modularity, and language best practices.
 `;
+  } else if (isCodeReview) {
+    typeInstructions = `
+CRITICAL CODE-REVIEW EVALUATION INSTRUCTIONS:
+1. Assess whether the candidate correctly identified the bug(s), security vulnerabilities, or performance bottlenecks in the given code snippet.
+2. Evaluate whether the proposed fix or explanation is accurate, safe, and idiomatic.
+3. Assess the constructive tone and clarity of the candidate's feedback.
+`;
+  } else if (isStructured) {
+    typeInstructions = `
+CRITICAL STRUCTURED-RESPONSE INSTRUCTIONS:
+1. Evaluate how thoroughly the candidate addressed each required field/step of the structured prompt.
+2. Assess logical progression, completeness, coherence, and depth across all structured components.
+`;
+  } else {
+    typeInstructions = `
+EVALUATION INSTRUCTIONS:
+1. Evaluate the submission against the question prompt with rigorous, evidence-based objectivity.
+2. Award marks proportionally based strictly on the candidate's demonstrated quality, reasoning, and depth.
+`;
+  }
 
-  if (request.evaluationRubric && request.evaluationRubric.length > 0) {
-    instructions += `\nEvaluation Rubric / Criteria:\n`;
-    request.evaluationRubric.forEach((criterion, index) => {
-      instructions += `${index + 1}. ${criterion}\n`;
+  // Section 3: Question Context & Metadata
+  let questionBlock = `QUESTION / PROBLEM STATEMENT:\n${request.question}\n`;
+
+  const meta = request.metadata || {};
+  if (meta.scenario) {
+    questionBlock += `\nScenario Context:\n${meta.scenario}\n`;
+  }
+  if (meta.caseStudyTitle || meta.caseStudyProblemStatement) {
+    questionBlock += `\nCase Study: ${meta.caseStudyTitle || ''}\n${meta.caseStudyProblemStatement || ''}\n`;
+    if (meta.caseStudyContext) questionBlock += `Context: ${meta.caseStudyContext}\n`;
+    if (meta.caseStudyBackground) questionBlock += `Background: ${meta.caseStudyBackground}\n`;
+  }
+  if (meta.constraints) {
+    questionBlock += `\nConstraints:\n${meta.constraints}\n`;
+  }
+  if (meta.sampleInput || meta.sampleOutput) {
+    questionBlock += `\nSample Input:\n${meta.sampleInput || 'N/A'}\nSample Output:\n${meta.sampleOutput || 'N/A'}\n`;
+  }
+  if (Array.isArray(meta.fields) && meta.fields.length > 0) {
+    questionBlock += `\nRequired Structured Fields:\n`;
+    meta.fields.forEach((f: any, idx: number) => {
+      questionBlock += `${idx + 1}. ${typeof f === 'object' ? (f.label || f.name || JSON.stringify(f)) : String(f)}\n`;
     });
   }
+  if (meta.minWords || meta.maxWords) {
+    questionBlock += `\nExpected Word Count: ${meta.minWords ? `Min ${meta.minWords}` : ''} ${meta.maxWords ? `Max ${meta.maxWords}` : ''}\n`;
+  }
 
-  return instructions;
-}
+  // Section 4: Student Submission
+  const studentBlock = `\nCANDIDATE'S SUBMISSION:\n${request.studentAnswer}\n`;
 
-function getCodingPrompt(request: EvaluationRequest): string {
-  let instructions = `You are an expert technical interviewer and code reviewer evaluating a student's coding submission.
-Analyze the submission and respond STRICTLY in valid JSON format matching this schema, without any markdown formatting or extra text.
+  // Section 5: Predefined Criteria & Marks Allocation Table
+  let criteriaBlock = `\nPREDEFINED EVALUATION CRITERIA & MARK ALLOCATIONS (TOTAL: ${request.maxMarks} MARKS):\n`;
+  criteriaBlock += `You MUST score the submission against each of the following predefined criteria. Do NOT alter, omit, or add criteria.\n\n`;
 
-Evaluate the submitted code based on:
-1. Syntax
-2. Logic
-3. Correctness
-4. Completeness
-5. Edge cases
-6. Best practices
+  allocatedCriteria.forEach((c, index) => {
+    criteriaBlock += `${index + 1}. [ID: "${c.id}"] ${c.name} — MAXIMUM: ${c.maxScore} marks\n`;
+    criteriaBlock += `   Scope: ${c.description}\n`;
+  });
+
+  // Section 6: Output Schema & Validation Rules
+  const schemaBlock = `
+RESPONSE REQUIREMENTS:
+Analyze the candidate's submission and respond STRICTLY in valid JSON matching this schema, without markdown code fences or conversational text:
 
 {
-  "detectedLanguage": "string", // Automatically detect the programming language (e.g. Python, Java, JavaScript, C, C++, C#, Go, PHP, Ruby, Kotlin, Swift, Rust, TypeScript)
-  "evaluationStatus": "string", // EXACTLY ONE OF: "Correct", "Partially Correct", "Incorrect"
-  "score": number, // Score awarded (integer or decimal)
-  "feedback": "string", // Detailed review
-  "strengths": ["string"], // List of 1-3 strengths
-  "mistakes": ["string"], // List of logical or syntax mistakes made by the student
-  "suggestions": ["string"] // List of suggestions for improvement
+  "evaluationStatus": "Correct" | "Partially Correct" | "Incorrect",
+  "criteria": [
+${allocatedCriteria.map(c => `    {
+      "id": "${c.id}",
+      "name": "${c.name}",
+      "score": <number between 0.0 and ${c.maxScore}>,
+      "maxScore": ${c.maxScore},
+      "explanation": "<Specific evidence and justification for score awarded>"
+    }`).join(',\n')}
+  ],
+  "score": <number equal to the exact sum of criterion scores>,
+  "feedback": "<Overall qualitative summary feedback>",
+  "strengths": ["<1-3 key strengths demonstrated>"],
+  "improvements": ["<1-3 actionable improvements>"],
+  "deductionReasons": ["<Specific reason(s) for any marks deducted>"]
 }
 
-Maximum Marks Possible: ${request.maxMarks}
+SCORING RULES:
+1. For every criterion, the score MUST be between 0.0 and its maxScore (rounded to 1 decimal place).
+2. The overall "score" property MUST equal the exact mathematical sum of all criterion scores.
+3. If the answer is completely missing, irrelevant, or logically invalid, assign 0.0 to all criteria.
+4. Output STRICT standard JSON only.
+`;
 
-Question / Problem Statement:
-${request.question}
-
-Student's Submitted Code:
-${request.studentAnswer}
-
-IMPORTANT SCORING RULES:
-1. Complete & correct logic covering edge cases: Award full marks.
-2. Minor syntax errors but correct logic, or missing edge cases: Award partial marks and set status to "Partially Correct". A partially correct solution MUST NOT be marked as fully correct.
-3. Incomplete solutions, completely wrong logic, or uncompilable snippets: Award 0 marks and set status to "Incorrect".
-
-Evaluate the code rigorously. Ensure you output standard JSON.`;
-
-  return instructions;
-}
-
-function getCodeReviewPrompt(request: EvaluationRequest): string {
-  return `${getBaseInstructions(request)}
-
-Code to Review / Question:
-${request.question}
-
-Student's Review / Answer:
-${request.studentAnswer}
-
-IMPORTANT SCORING RULES:
-1. Did the student identify the bugs or security vulnerabilities present in the code?
-2. Is the student's suggested fix or explanation correct and idiomatic?
-3. Award points based on the severity and accuracy of their findings.
-
-Evaluate their review skills based on accuracy and clarity. Ensure you output standard JSON.`;
-}
-
-function getOpenResponsePrompt(request: EvaluationRequest): string {
-  return `${getBaseInstructions(request)}
-
-Question:
-${request.question}
-
-Student's Answer:
-${request.studentAnswer}
-
-Evaluate the student's answer based strictly on:
-1. Relevance
-2. Correctness
-3. Completeness
-4. Practicality
-5. Communication
-
-If the answer is completely off-topic or wrong, award 0 marks.`;
-}
-
-function getStructuredResponsePrompt(request: EvaluationRequest): string {
-  return `${getBaseInstructions(request)}
-
-Scenario / Question:
-${request.question}
-
-Student's Answer:
-${request.studentAnswer}
-
-Evaluate the student's response based strictly on:
-1. Structure
-2. Logical Flow
-3. Coverage
-4. Accuracy
-5. Completeness
-6. Clarity
-
-Pay special attention to how well they adhered to any requested structure, methodologies, or specific points mentioned in the prompt or rubric.`;
+  return `${roleHeader}${typeInstructions}\n${questionBlock}${studentBlock}${criteriaBlock}${schemaBlock}`;
 }

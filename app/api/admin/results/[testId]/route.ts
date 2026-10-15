@@ -182,12 +182,15 @@ export async function GET(
             feedback: ai?.feedback,
             strengths: ai?.strengths,
             improvements: ai?.improvements,
+            criteriaScores: (ai?.raw_response as any)?.criteriaScores || (r.ai_evaluation_json as any)?.criteriaScores || [],
+            deductionReasons: (ai?.raw_response as any)?.deductionReasons || (r.ai_evaluation_json as any)?.deductionReasons || [],
             mistakes: (ai?.raw_response as any)?.mistakes || [],
             suggestions: (ai?.raw_response as any)?.suggestions || [],
             modelUsed: ai?.model_used,
             rawResponse: ai?.raw_response || r.ai_evaluation_json || null,
             evaluatedAt: ai?.evaluated_at || (r.ai_evaluation_json as any)?.evaluatedAt || null
           };
+
         })
       };
     }).filter(sec => sec.evaluations.length > 0);

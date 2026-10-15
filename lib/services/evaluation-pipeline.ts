@@ -117,13 +117,30 @@ export async function processBackgroundEvaluations(
           });
         }
         
+        const options = (question.options_json as any) || {};
+
         const evaluationRequest: EvaluationRequest = {
           questionId: question.id,
           section: question.section || undefined,
-          questionType: question.type as string,
+          questionType: options.subtype || (question.type as string),
           question: question.question_text,
           studentAnswer: trimmedAnswer,
           maxMarks: pts,
+          metadata: {
+            constraints: options.constraints,
+            sampleInput: options.sampleInput,
+            sampleOutput: options.sampleOutput,
+            language: options.language,
+            fields: options.fields,
+            scenario: options.scenario,
+            caseStudyTitle: options.caseStudyTitle,
+            caseStudyProblemStatement: options.caseStudyProblemStatement,
+            caseStudyBackground: options.caseStudyBackground,
+            caseStudyContext: options.caseStudyContext,
+            minWords: options.minWords,
+            maxWords: options.maxWords,
+            subtype: options.subtype
+          }
         };
 
         const evaluationResponse = await evaluateAnswer(evaluationRequest);
@@ -151,6 +168,13 @@ export async function processBackgroundEvaluations(
             }
           });
 
+          const rawResponsePayload = {
+            ...(evaluationResponse.rawJson || {}),
+            criteriaScores: evaluationResponse.criteriaScores || [],
+            deductionReasons: evaluationResponse.deductionReasons || [],
+            ...(evaluationResponse.error ? { error: evaluationResponse.error } : {})
+          };
+
           await prisma.aIEvaluation.upsert({
             where: { test_response_id: existingResponse.id },
             update: {
@@ -161,7 +185,7 @@ export async function processBackgroundEvaluations(
               improvements: evaluationResponse.improvements,
               evaluation_status: finalStatus,
               model_used: evaluationResponse.modelUsed || 'openrouter',
-              raw_response: (evaluationResponse.rawJson || { error: evaluationResponse.error || 'Evaluation failed' }) as any,
+              raw_response: rawResponsePayload as any,
               evaluated_at: new Date()
             },
             create: {
@@ -177,12 +201,13 @@ export async function processBackgroundEvaluations(
               improvements: evaluationResponse.improvements,
               evaluation_status: finalStatus,
               model_used: evaluationResponse.modelUsed || 'openrouter',
-              raw_response: (evaluationResponse.rawJson || { error: evaluationResponse.error || 'Evaluation failed' }) as any,
+              raw_response: rawResponsePayload as any,
               evaluated_at: new Date(),
               test_response_id: existingResponse.id
             }
           });
         }
+
       } catch (itemError: any) {
         console.error(`[Background Evaluation Error] Question ${questionId} failed:`, itemError?.message || itemError);
 

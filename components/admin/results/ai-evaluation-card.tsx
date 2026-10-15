@@ -143,8 +143,10 @@ export function AIEvaluationCard({
   const isCoding = evaluation.type === 'coding';
   const studentAnswerText = evaluation.studentAnswer || '// No answer provided by candidate';
   const codeLines = studentAnswerText.split('\n');
-  const resultInfo = getResultInfo(evaluation);
-  const feedbackSummary = evaluation.feedback || 'The solution correctly identifies a basic palindrome using string reversal. However, it does not handle spaces, special characters, or case normalization robustly. The code is clean and readable.';
+  const feedbackSummary = evaluation.feedback || (evaluation.status === 'FAILED' ? 'Evaluation failed.' : 'No feedback recorded.');
+  const criteriaScores = evaluation.criteriaScores || evaluation.rawResponse?.criteriaScores || evaluation.rawResponse?.criteria || [];
+  const deductionReasons = evaluation.deductionReasons || evaluation.rawResponse?.deductionReasons || evaluation.mistakes || [];
+
 
   return (
     <div className="border border-slate-200/80 rounded-2xl p-3.5 sm:p-4 bg-white shadow-2xs hover:border-slate-300 transition-colors">
@@ -335,7 +337,33 @@ export function AIEvaluationCard({
 
                 {/* Detailed Feedback Breakdown (Expanded) */}
                 {isExpanded && (
-                  <div className="mt-2.5 space-y-2 pt-2 border-t border-slate-200/60 animate-fade-in text-xs min-w-0">
+                  <div className="mt-2.5 space-y-2.5 pt-2 border-t border-slate-200/60 animate-fade-in text-xs min-w-0">
+                    {/* Criterion-Level Mark Breakdown */}
+                    {criteriaScores && criteriaScores.length > 0 && (
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2 min-w-0">
+                        <span className="font-bold text-slate-800 text-[10px] uppercase tracking-wider block">
+                          Predefined Criterion Breakdown
+                        </span>
+                        <div className="space-y-2">
+                          {criteriaScores.map((c: any, i: number) => (
+                            <div key={c.id || i} className="p-2.5 rounded-lg bg-slate-50/90 border border-slate-100 flex flex-col gap-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-slate-800 text-[11px] truncate">{c.name}</span>
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                  {c.score} / {c.maxScore} marks
+                                </span>
+                              </div>
+                              {c.explanation && (
+                                <p className="text-[11px] text-slate-600 leading-normal break-words m-0">
+                                  {c.explanation}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Strengths */}
                     {evaluation.strengths && evaluation.strengths.length > 0 && (
                       <div className="bg-emerald-50/70 p-2.5 rounded-lg border border-emerald-100 min-w-0">
@@ -351,13 +379,13 @@ export function AIEvaluationCard({
                     )}
 
                     {/* Mistakes / Deductions */}
-                    {((evaluation.mistakes && evaluation.mistakes.length > 0) || (evaluation.rawResponse?.deductionReasons && evaluation.rawResponse.deductionReasons.length > 0)) && (
+                    {deductionReasons && deductionReasons.length > 0 && (
                       <div className="bg-rose-50/70 p-2.5 rounded-lg border border-rose-100 min-w-0">
                         <span className="font-bold text-rose-800 text-[10px] uppercase tracking-wider block mb-1">
                           Mistakes & Deductions
                         </span>
                         <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-rose-700 leading-tight break-words">
-                          {(evaluation.mistakes || evaluation.rawResponse?.deductionReasons).map((m: string, i: number) => (
+                          {deductionReasons.map((m: string, i: number) => (
                             <li key={i}>{m}</li>
                           ))}
                         </ul>
@@ -379,6 +407,7 @@ export function AIEvaluationCard({
                     )}
                   </div>
                 )}
+
               </div>
             </div>
           )}

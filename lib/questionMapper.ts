@@ -96,9 +96,24 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   }
 
   if (['open_text', 'structured_response'].includes(type)) {
-    if (rawData.minWords) optionsJson.minWords = Number(rawData.minWords);
-    if (rawData.maxWords) optionsJson.maxWords = Number(rawData.maxWords);
+    const minW = rawData.minWords ?? rawData['Min Words'];
+    const maxW = rawData.maxWords ?? rawData['Max Words'];
+    if (minW !== undefined && minW !== null && minW !== '') optionsJson.minWords = Number(minW);
+    if (maxW !== undefined && maxW !== null && maxW !== '') optionsJson.maxWords = Number(maxW);
   }
+
+
+  // Preserve specialized scenario and case study metadata if provided
+  if (rawData.scenario) optionsJson.scenario = String(rawData.scenario);
+  if (rawData.caseStudyTitle) optionsJson.caseStudyTitle = String(rawData.caseStudyTitle);
+  if (rawData.caseStudyBackground) optionsJson.caseStudyBackground = String(rawData.caseStudyBackground);
+  if (rawData.caseStudyContext) optionsJson.caseStudyContext = String(rawData.caseStudyContext);
+  if (rawData.caseStudyProblemStatement) optionsJson.caseStudyProblemStatement = String(rawData.caseStudyProblemStatement);
+  if (rawData.caseStudySupportingInfo) optionsJson.caseStudySupportingInfo = String(rawData.caseStudySupportingInfo);
+  if (rawType && rawType !== type && !['yes_no', 'coding_mcq'].includes(rawType)) {
+    optionsJson.subtype = rawType;
+  }
+
 
   // 4. Construct Final Payload
   const showsMarks = !isEligibilityCategory(section);
