@@ -212,6 +212,10 @@ export function StudentsViewer() {
         statusKey = 'IN_PROGRESS';
         statusLabel = 'IN PROGRESS';
         badgeClass = 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]';
+      } else if (s === 'evaluation_failed') {
+        statusKey = 'EVALUATION_FAILED';
+        statusLabel = 'EVALUATION FAILED';
+        badgeClass = 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]';
       } else {
         statusKey = s.toUpperCase();
         statusLabel = s.toUpperCase().replace(/_/g, ' ');
@@ -245,6 +249,11 @@ export function StudentsViewer() {
       return {
         label: 'IN PROGRESS',
         badgeClass: 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]'
+      };
+    } else if (s === 'evaluation_failed') {
+      return {
+        label: 'EVALUATION FAILED',
+        badgeClass: 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]'
       };
     } else {
       return {

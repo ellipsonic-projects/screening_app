@@ -35,13 +35,23 @@ export async function recalculateTestScore(testId: string): Promise<number> {
   let overallAiMarks = 0;
   const sectionTotals: Record<string, number> = {};
 
+  const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
+  let hasFailedEvaluation = false;
+
   for (const response of responses) {
     if (isEligibilityCategory(response.question?.section)) continue;
     
+    const isSubjective = REVIEWABLE_TYPES.includes(response.question?.type || '');
+    const aiEval = aiEvaluations.find(e => e.test_response_id === response.id);
+    const evalStatus = aiEval?.evaluation_status || response.evaluation_status;
+
+    if (isSubjective && evalStatus === 'FAILED') {
+      hasFailedEvaluation = true;
+    }
+
     let earned = 0;
 
     // Explicitly check AI Evaluation marks for this response
-    const aiEval = aiEvaluations.find(e => e.test_response_id === response.id);
     if (aiEval && aiEval.obtained_marks !== null && aiEval.obtained_marks !== undefined) {
       earned = Number(aiEval.obtained_marks);
     } else if (response.points_earned !== null && response.points_earned !== undefined) {
@@ -57,6 +67,7 @@ export async function recalculateTestScore(testId: string): Promise<number> {
   }
 
   for (const evaluation of aiEvaluations) {
+    if (isEligibilityCategory(evaluation.section)) continue;
     if (evaluation.obtained_marks !== null && evaluation.obtained_marks !== undefined) {
       overallAiMarks += Number(evaluation.obtained_marks);
     }
@@ -64,12 +75,47 @@ export async function recalculateTestScore(testId: string): Promise<number> {
 
   const overallPercentage = totalPossiblePoints > 0 ? (totalEarnedPoints / totalPossiblePoints) * 100 : 0;
 
+  if (hasFailedEvaluation) {
+    // If any evaluation failed, candidate score must NOT be finalized as zero/partial
+    await prisma.test.update({
+      where: { id: testId },
+      data: {
+        score: null,
+        status: 'evaluation_failed'
+      }
+    });
+
+    await prisma.testAnalytics.upsert({
+      where: { test_id: testId },
+      update: {
+        total_score: null,
+        overall_ai_marks: overallAiMarks,
+        overall_percentage: null,
+        section_totals: sectionTotals
+      },
+      create: {
+        test_id: testId,
+        total_score: null,
+        overall_ai_marks: overallAiMarks,
+        overall_percentage: null,
+        section_totals: sectionTotals
+      }
+    });
+
+    return 0;
+  }
+
+  const updateData: any = {
+    score: totalEarnedPoints
+  };
+  if (test.status === 'evaluation_failed') {
+    updateData.status = 'evaluated';
+  }
+
   // Persist the recalculated absolute score
   await prisma.test.update({
     where: { id: testId },
-    data: {
-      score: totalEarnedPoints
-    }
+    data: updateData
   });
 
   // Upsert TestAnalytics

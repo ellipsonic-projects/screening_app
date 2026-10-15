@@ -24,24 +24,40 @@ export async function GET(request: NextRequest) {
               select: { email: true }
             }
           }
+        },
+        test_responses: {
+          select: {
+            evaluation_status: true,
+            question: { select: { type: true } }
+          }
         }
       },
       orderBy: { created_at: 'desc' }
     });
 
-    const mappedTests = tests.map(test => ({
-      id: test.id,
-      fullName: test.student?.full_name || 'Unknown',
-      usn: test.student?.usn || '',
-      branch: test.student?.branch_name || '',
-      email: test.student?.user?.email || '',
-      status: test.status,
-      score: test.score !== null && test.score !== undefined ? Number(test.score) : null,
-      violations: test.violations_count || 0,
-      createdAt: test.created_at,
-      submittedAt: test.end_time,
-      results_published: test.results_published
-    }));
+    const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
+
+    const mappedTests = tests.map(test => {
+      const hasFailed = test.status === 'evaluation_failed' || test.test_responses?.some(
+        r => REVIEWABLE_TYPES.includes(r.question?.type || '') && r.evaluation_status === 'FAILED'
+      );
+
+      const effectiveStatus = hasFailed ? 'evaluation_failed' : test.status;
+
+      return {
+        id: test.id,
+        fullName: test.student?.full_name || 'Unknown',
+        usn: test.student?.usn || '',
+        branch: test.student?.branch_name || '',
+        email: test.student?.user?.email || '',
+        status: effectiveStatus,
+        score: effectiveStatus === 'evaluation_failed' ? null : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
+        violations: test.violations_count || 0,
+        createdAt: test.created_at,
+        submittedAt: test.end_time,
+        results_published: test.results_published
+      };
+    });
 
     return NextResponse.json({
       message: 'Evaluations retrieved successfully',

@@ -20,7 +20,8 @@ import {
   Settings,
   MessageSquare,
   Bot,
-  Award
+  Award,
+  AlertTriangle
 } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
 import { AIEvaluationCard } from './ai-evaluation-card';
@@ -259,8 +260,12 @@ export function StudentReport() {
                 <h1 className="text-base sm:text-lg font-black text-[#10234E] tracking-tight">
                   {data.studentName}
                 </h1>
-                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-[#E8FAF0] text-[#059669] border-[#A7F3D0]">
-                  {statusStr}
+                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                  data.status === 'evaluation_failed'
+                    ? 'bg-[#FEE2E2] text-[#DC2626] border-[#FECACA]'
+                    : (data.status === 'in_progress' ? 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]' : 'bg-[#E8FAF0] text-[#059669] border-[#A7F3D0]')
+                }`}>
+                  {data.status === 'evaluation_failed' ? 'EVALUATION FAILED' : statusStr}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2.5 mt-1 text-xs text-slate-500 font-medium">
@@ -289,10 +294,12 @@ export function StudentReport() {
               </span>
               <div className="flex items-baseline sm:justify-end gap-1 mt-0.5">
                 <span className="text-2xl sm:text-3xl font-black text-[#1760FF] tracking-tight leading-none">
-                  {data.scores?.overallScore ?? 64.5}
+                  {data.scores?.overallScore !== null && data.scores?.overallScore !== undefined 
+                    ? data.scores.overallScore 
+                    : (data.status === 'evaluation_failed' ? 'Failed' : '--')}
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-slate-400">
-                  / {data.scores?.overallTotalMarks ?? 305}
+                  / {data.scores?.overallTotalMarks ?? 0}
                 </span>
               </div>
             </div>
@@ -301,6 +308,20 @@ export function StudentReport() {
             </div>
           </div>
         </div>
+
+        {/* Evaluation Failure Banner for Administrators */}
+        {data.status === 'evaluation_failed' && (
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3 text-rose-900 shadow-2xs">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <span className="font-bold text-sm block">Automated AI Evaluation Incomplete or Failed</span>
+              <p className="text-rose-700">
+                One or more subjective questions failed automated grading. Their marks are not finalized or treated as zero.
+                Please review the failed questions below to re-evaluate them with AI or apply a manual score override.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* 2. Section Performance (10 Cards in 5-Column Grid on Desktop) */}
         <div className="space-y-2">

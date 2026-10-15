@@ -99,13 +99,29 @@ export async function GET(
       }
     });
 
+    const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
+
+    const hasAnyFailedEvaluation = test.test_responses.some(r => {
+      const ai = r.ai_evaluation as any;
+      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type);
+      return isReviewable && (
+        r.evaluation_status === 'FAILED' ||
+        ai?.evaluation_status === 'FAILED'
+      );
+    });
+
+    const effectiveStatus = (test.status === 'evaluation_failed' || hasAnyFailedEvaluation) 
+      ? 'evaluation_failed' 
+      : test.status;
+
     const scores = {
-      overallScore: test.score ? Number(test.score) : overallMarksObtained,
+      overallScore: effectiveStatus === 'evaluation_failed'
+        ? null
+        : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
       overallTotalMarks,
       sectionScores: finalSectionScores
     };
     // Group AI Evaluations by Section
-    const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
     const aiEvaluationsBySection = SECTIONS.map(sec => {
       const isSecEligibility = isEligibilityCategory(sec.id);
       const responsesInSection = test.test_responses.filter(r => 
@@ -181,7 +197,7 @@ export async function GET(
       data: {
         id: test.id,
         studentName: test.student?.full_name || 'Unknown Student',
-        status: test.status,
+        status: effectiveStatus,
         startTime: test.start_time,
         endTime: test.end_time,
         submissionTime: test.end_time,

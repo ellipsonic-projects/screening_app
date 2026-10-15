@@ -124,12 +124,48 @@ export async function POST(
         return NextResponse.json({ message: 'Submission not found' }, { status: 404 });
       }
 
+      const trimmedAnswer = (testResponse.student_answer || '').trim();
+      if (trimmedAnswer.length === 0) {
+        await prisma.testResponse.update({
+          where: { id: testResponse.id },
+          data: {
+            points_earned: 0,
+            is_correct: false,
+            evaluation_status: 'COMPLETED',
+            ai_evaluation_json: {
+              evaluationStatus: 'COMPLETED',
+              score: 0,
+              feedback: 'No answer provided.',
+              strengths: [],
+              improvements: ['Provide an answer to be evaluated.'],
+              evaluatedAt: new Date().toISOString()
+            }
+          }
+        });
+
+        await prisma.aIEvaluation.updateMany({
+          where: { test_response_id: testResponse.id },
+          data: {
+            obtained_marks: 0,
+            evaluation_status: 'COMPLETED',
+            feedback: 'No answer provided.'
+          }
+        });
+
+        await recalculateTestScore(id);
+
+        return NextResponse.json({
+          message: 'Blank answer graded with 0 marks',
+          status: 'COMPLETED'
+        });
+      }
+
       await prisma.testResponse.update({
         where: { id: testResponse.id },
         data: {
           points_earned: null,
           evaluation_status: 'PENDING',
-          ai_evaluation_json: { evaluation_status: 'PENDING', evaluated_at: new Date().toISOString() }
+          ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
         }
       });
 
@@ -143,7 +179,7 @@ export async function POST(
       after(() => {
         enqueueEvaluationJob(id, [{
           questionId: questionId,
-          studentAnswer: testResponse.student_answer || ''
+          studentAnswer: trimmedAnswer
         }]).catch(err => {
           console.error(`[Re-Evaluation Queue Error]`, err);
         });
@@ -229,10 +265,6 @@ export async function POST(
     }
 
     if (action === 'submit') {
-      if (test.is_completed || test.status === 'submitted' || test.status === 'auto_submitted') {
-        return NextResponse.json({ message: 'Test has already been submitted', status: test.status }, { status: 409 });
-      }
-
       const data = await request.json().catch(() => ({}));
       if (!data.assessmentId && id) {
         data.assessmentId = id;
@@ -248,6 +280,26 @@ export async function POST(
       }
 
       const validatedData = validationResult.data;
+      const targetStatus = validatedData.status || 'submitted';
+
+      // Atomic transition check to prevent duplicate evaluation processing from repeated / concurrent submissions
+      const claimed = await prisma.test.updateMany({
+        where: {
+          id: test.id,
+          is_completed: false,
+          status: 'in_progress'
+        },
+        data: {
+          status: targetStatus,
+          is_completed: true,
+          end_time: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      if (claimed.count === 0) {
+        return NextResponse.json({ message: 'Test has already been submitted', status: test.status }, { status: 409 });
+      }
 
       const evalPayloads: any[] = [];
       const questionMap = new Map();
@@ -284,12 +336,66 @@ export async function POST(
           const q = questionMap.get(response.questionId);
           const aiEvaluableTypes = ['coding', 'structured_response', 'open_text'];
           if (q && aiEvaluableTypes.includes(q.type)) {
+            const trimmedAnswer = (response.answer || '').trim();
+            if (trimmedAnswer.length > 0) {
+              evalPayloads.push({
+                testId: test.id,
+                questionId: response.questionId,
+                studentAnswer: response.answer || ''
+              });
+            } else {
+              // Blank answer: grade immediately as 0, COMPLETED without calling OpenRouter
+              await prisma.testResponse.updateMany({
+                where: { test_id: test.id, question_id: response.questionId },
+                data: {
+                  points_earned: 0,
+                  is_correct: false,
+                  evaluation_status: 'COMPLETED',
+                  ai_evaluation_json: {
+                    evaluationStatus: 'COMPLETED',
+                    score: 0,
+                    feedback: 'No answer provided.',
+                    strengths: [],
+                    improvements: ['Provide an answer to be evaluated.'],
+                    evaluatedAt: new Date().toISOString()
+                  }
+                }
+              });
 
-            evalPayloads.push({
-              testId: test.id,
-              questionId: response.questionId,
-              studentAnswer: response.answer || ''
-            });
+              const tr = await prisma.testResponse.findFirst({
+                where: { test_id: test.id, question_id: response.questionId }
+              });
+
+              if (tr) {
+                await prisma.aIEvaluation.upsert({
+                  where: { test_response_id: tr.id },
+                  update: {
+                    obtained_marks: 0,
+                    maximum_marks: q.points || 0,
+                    feedback: 'No answer provided.',
+                    strengths: [],
+                    improvements: ['Provide an answer to be evaluated.'],
+                    evaluation_status: 'COMPLETED',
+                    evaluated_at: new Date()
+                  },
+                  create: {
+                    test_id: test.id,
+                    student_id: test.student_id,
+                    question_id: response.questionId,
+                    section: q.section,
+                    question_type: q.type,
+                    obtained_marks: 0,
+                    maximum_marks: q.points || 0,
+                    feedback: 'No answer provided.',
+                    strengths: [],
+                    improvements: ['Provide an answer to be evaluated.'],
+                    evaluation_status: 'COMPLETED',
+                    evaluated_at: new Date(),
+                    test_response_id: tr.id
+                  }
+                });
+              }
+            }
           } else if (q && q.type === 'ranking') {
             try {
               const studentObj = JSON.parse(response.answer || '{}');
@@ -379,9 +485,6 @@ export async function POST(
       await prisma.test.update({
         where: { id: test.id },
         data: {
-          status: validatedData.status || 'submitted',
-          is_completed: true,
-          end_time: new Date(),
           updated_at: new Date()
         }
       });

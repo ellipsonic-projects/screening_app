@@ -46,6 +46,16 @@ export function AIEvaluationCard({
   }, [evaluation]);
 
   const getResultInfo = (evaluation: any) => {
+    if (evaluation.status === 'FAILED') {
+      return { text: 'Evaluation Failed', badgeClass: 'bg-[#FEE2E2] text-[#DC2626] border-[#FECACA]' };
+    }
+    if (evaluation.status === 'PROCESSING') {
+      return { text: 'Processing', badgeClass: 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]' };
+    }
+    if (evaluation.status === 'PENDING') {
+      return { text: 'Pending Evaluation', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' };
+    }
+
     const aiStatus = evaluation.rawResponse?.evaluationStatus || evaluation.rawResponse?.codingEvaluationStatus;
     if (aiStatus === 'Correct') {
       return { text: 'Correct', badgeClass: 'bg-[#E8FAF0] text-[#059669] border-[#A7F3D0]' };
@@ -64,7 +74,10 @@ export function AIEvaluationCard({
     if (evaluation.pointsEarned !== null && evaluation.maxPoints && evaluation.pointsEarned > 0 && evaluation.pointsEarned < evaluation.maxPoints) {
       return { text: 'Partially Correct', badgeClass: 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]' };
     }
-    return { text: 'Partially Correct', badgeClass: 'bg-[#E8FAF0] text-[#059669] border-[#A7F3D0]' };
+    if (evaluation.pointsEarned === 0) {
+      return { text: 'Incorrect', badgeClass: 'bg-[#FEE2E2] text-[#DC2626] border-[#FECACA]' };
+    }
+    return { text: 'Unscored', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' };
   };
 
   const handleCopyCode = () => {
@@ -96,13 +109,22 @@ export function AIEvaluationCard({
   };
 
   const handleOverride = async () => {
-    if (!overrideScore) return;
+    if (overrideScore === '') return;
+    const num = Number(overrideScore);
+    if (isNaN(num) || num < 0) {
+      toast.error('Marks must be a non-negative number');
+      return;
+    }
+    if (evaluation.maxPoints && num > evaluation.maxPoints) {
+      toast.error(`Marks cannot exceed maximum points (${evaluation.maxPoints})`);
+      return;
+    }
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
       await axios.post(`/api/admin/results/${testId}/override`, {
         questionId: evaluation.questionId,
-        newScore: Number(overrideScore),
+        newScore: num,
         feedback: overrideFeedback
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -110,8 +132,9 @@ export function AIEvaluationCard({
       setIsOverriding(false);
       toast.success('Score updated successfully');
       if (onRefresh) onRefresh();
-    } catch (error) {
-      toast.error('Failed to override score');
+    } catch (error: any) {
+      const msg = error?.response?.data?.error || 'Failed to override score';
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -143,8 +166,8 @@ export function AIEvaluationCard({
           {evaluation.section !== 'ELIGIBILITY' && (
             <div className="bg-white border border-slate-200/80 rounded-xl px-3.5 py-1.5 text-center shadow-2xs min-w-[95px]">
               <div className="text-sm font-black text-[#1760FF] leading-none">
-                <span>{evaluation.pointsEarned !== null ? evaluation.pointsEarned : 8}</span>
-                <span className="text-xs font-bold text-slate-400"> / {evaluation.maxPoints || 20}</span>
+                <span>{evaluation.pointsEarned !== null && evaluation.pointsEarned !== undefined ? evaluation.pointsEarned : (evaluation.status === 'FAILED' ? 'N/A' : (evaluation.status === 'PROCESSING' || evaluation.status === 'PENDING' ? 'Pending' : 0))}</span>
+                <span className="text-xs font-bold text-slate-400"> / {evaluation.maxPoints || 0}</span>
               </div>
               <div className="text-[9px] font-bold uppercase text-slate-400 tracking-wider mt-0.5">
                 Points Awarded

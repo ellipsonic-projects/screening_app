@@ -42,14 +42,9 @@ export async function processBackgroundEvaluations(
           where: { test_id: testId, question_id: questionId }
         });
 
-        if (existingResponse) {
-          await prisma.testResponse.update({
-            where: { id: existingResponse.id },
-            data: {
-              evaluation_status: 'PROCESSING',
-              ai_evaluation_json: { evaluationStatus: 'PROCESSING', evaluatedAt: new Date().toISOString() }
-            }
-          });
+        // Skip if already completed (prevents duplicate evaluation from repeated submissions)
+        if (existingResponse && existingResponse.evaluation_status === 'COMPLETED') {
+          continue;
         }
 
         const question = await prisma.question.findUnique({ where: { id: questionId } });
@@ -59,13 +54,75 @@ export async function processBackgroundEvaluations(
         }
 
         const pts = question.points || 0;
+        const trimmedAnswer = String(studentAnswer || '').trim();
+
+        // Prevent blank answers from being sent to OpenRouter; preserve intended blank scoring (0 marks, COMPLETED)
+        if (trimmedAnswer.length === 0) {
+          if (existingResponse) {
+            await prisma.testResponse.update({
+              where: { id: existingResponse.id },
+              data: {
+                points_earned: 0,
+                is_correct: false,
+                evaluation_status: 'COMPLETED',
+                ai_evaluation_json: {
+                  evaluationStatus: 'COMPLETED',
+                  score: 0,
+                  feedback: 'No answer provided.',
+                  strengths: [],
+                  improvements: ['Provide an answer to be evaluated.'],
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+
+            await prisma.aIEvaluation.upsert({
+              where: { test_response_id: existingResponse.id },
+              update: {
+                obtained_marks: 0,
+                maximum_marks: pts,
+                feedback: 'No answer provided.',
+                strengths: [],
+                improvements: ['Provide an answer to be evaluated.'],
+                evaluation_status: 'COMPLETED',
+                evaluated_at: new Date()
+              },
+              create: {
+                test_id: testId,
+                student_id: test.student_id,
+                question_id: questionId,
+                section: question.section,
+                question_type: question.type,
+                obtained_marks: 0,
+                maximum_marks: pts,
+                feedback: 'No answer provided.',
+                strengths: [],
+                improvements: ['Provide an answer to be evaluated.'],
+                evaluation_status: 'COMPLETED',
+                evaluated_at: new Date(),
+                test_response_id: existingResponse.id
+              }
+            });
+          }
+          continue;
+        }
+
+        if (existingResponse) {
+          await prisma.testResponse.update({
+            where: { id: existingResponse.id },
+            data: {
+              evaluation_status: 'PROCESSING',
+              ai_evaluation_json: { evaluationStatus: 'PROCESSING', evaluatedAt: new Date().toISOString() }
+            }
+          });
+        }
         
         const evaluationRequest: EvaluationRequest = {
           questionId: question.id,
           section: question.section || undefined,
           questionType: question.type as string,
           question: question.question_text,
-          studentAnswer: String(studentAnswer || ''),
+          studentAnswer: trimmedAnswer,
           maxMarks: pts,
         };
 
@@ -147,6 +204,26 @@ export async function processBackgroundEvaluations(
                 }
               }
             });
+
+            await prisma.aIEvaluation.upsert({
+              where: { test_response_id: resp.id },
+              update: {
+                obtained_marks: null,
+                evaluation_status: 'FAILED',
+                feedback: `Evaluation failed: ${itemError?.message || 'Unexpected evaluation exception'}`,
+                evaluated_at: new Date()
+              },
+              create: {
+                test_id: testId,
+                student_id: test.student_id,
+                question_id: questionId,
+                obtained_marks: null,
+                evaluation_status: 'FAILED',
+                feedback: `Evaluation failed: ${itemError?.message || 'Unexpected evaluation exception'}`,
+                evaluated_at: new Date(),
+                test_response_id: resp.id
+              }
+            });
           }
         } catch (dbErr) {
           console.error(`[Background Evaluation] Failed to record error state for question ${questionId}:`, dbErr);
@@ -225,7 +302,43 @@ export async function gradePersistedTestResponses(testId: string): Promise<numbe
             data: {
               points_earned: 0,
               is_correct: false,
-              evaluation_status: 'COMPLETED'
+              evaluation_status: 'COMPLETED',
+              ai_evaluation_json: {
+                evaluationStatus: 'COMPLETED',
+                score: 0,
+                feedback: 'No answer provided.',
+                strengths: [],
+                improvements: ['Provide an answer to be evaluated.'],
+                evaluatedAt: new Date().toISOString()
+              }
+            }
+          });
+
+          await prisma.aIEvaluation.upsert({
+            where: { test_response_id: resp.id },
+            update: {
+              obtained_marks: 0,
+              maximum_marks: qPoints,
+              feedback: 'No answer provided.',
+              strengths: [],
+              improvements: ['Provide an answer to be evaluated.'],
+              evaluation_status: 'COMPLETED',
+              evaluated_at: new Date()
+            },
+            create: {
+              test_id: testId,
+              student_id: test.student_id,
+              question_id: resp.question_id,
+              section: q.section,
+              question_type: q.type,
+              obtained_marks: 0,
+              maximum_marks: qPoints,
+              feedback: 'No answer provided.',
+              strengths: [],
+              improvements: ['Provide an answer to be evaluated.'],
+              evaluation_status: 'COMPLETED',
+              evaluated_at: new Date(),
+              test_response_id: resp.id
             }
           });
         }

@@ -15,6 +15,29 @@ const MAX_EVALUATION_TOKENS = 1500;
  * Fully decoupled from persistence (Prisma) and queue/execution layers.
  */
 export async function evaluateAnswer(request: EvaluationRequest): Promise<EvaluationResponse> {
+  if (!request.studentAnswer || request.studentAnswer.trim().length === 0) {
+    return {
+      questionId: request.questionId,
+      score: 0,
+      maximumMarks: request.maxMarks,
+      feedback: 'No answer provided.',
+      strengths: [],
+      improvements: ['Provide an answer to be evaluated.'],
+      evaluationStatus: 'COMPLETED',
+      evaluatedAt: new Date().toISOString(),
+      modelUsed: 'none',
+      rawJson: {
+        score: 0,
+        marksAwarded: 0,
+        feedback: 'No answer provided.',
+        strengths: [],
+        improvements: [],
+        evaluationStatus: 'Incorrect'
+      },
+      success: true
+    };
+  }
+
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY;
   if (!apiKey) {
     return createFailedResponse(request, 'OPENROUTER_API_KEY is not configured on the server.');

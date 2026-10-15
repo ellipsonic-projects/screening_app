@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { gradePersistedTestResponses } from '@/lib/services/evaluation-pipeline';
+import { recalculateTestScore } from '@/lib/services/score-calculation';
 
 export async function GET(
   request: NextRequest,
@@ -233,6 +234,15 @@ export async function PATCH(
         });
 
         if (response && question) {
+          const parsedPoints = Number(pointsEarned);
+          const maxPoints = question.points || 0;
+          if (typeof pointsEarned === 'boolean' || isNaN(parsedPoints) || parsedPoints < 0 || parsedPoints > maxPoints) {
+            return NextResponse.json(
+              { message: `Invalid pointsEarned for question ${questionId}. Must be numeric between 0 and ${maxPoints}` },
+              { status: 400 }
+            );
+          }
+
           let cleanCode = response.student_answer || '';
           if (cleanCode.startsWith('// === EVALUATION REMARKS ===')) {
             const parts = cleanCode.split('// ==========================\n\n');
@@ -249,24 +259,30 @@ export async function PATCH(
           await prisma.testResponse.update({
             where: { id: response.id },
             data: {
-              points_earned: Number(pointsEarned),
-              is_correct: Number(pointsEarned) === Number(question.points),
+              points_earned: parsedPoints,
+              is_correct: parsedPoints === maxPoints,
+              evaluation_status: 'COMPLETED',
               student_answer: finalAnswer
+            }
+          });
+
+          await prisma.aIEvaluation.updateMany({
+            where: { test_response_id: response.id },
+            data: {
+              obtained_marks: parsedPoints,
+              evaluation_status: 'COMPLETED',
+              feedback: remarks ? `[EVALUATION REMARKS] ${remarks}` : undefined
             }
           });
         }
       }
 
-      // Recalculate total score
-      const allResponses = await prisma.testResponse.findMany({
-        where: { test_id: id }
-      });
-      const totalScore = allResponses.reduce((sum, r) => sum + (r.points_earned ? Number(r.points_earned) : 0), 0);
+      // Centralize score recalculation through recalculateTestScore service
+      await recalculateTestScore(id);
 
       const test = await prisma.test.update({
         where: { id },
         data: {
-          score: totalScore,
           status: 'evaluated'
         }
       });
