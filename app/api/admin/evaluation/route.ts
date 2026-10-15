@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { isEligibilityCategory } from '@/lib/categories';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
         test_responses: {
           select: {
             evaluation_status: true,
-            question: { select: { type: true } }
+            question: { select: { type: true, section: true } }
           }
         }
       },
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
 
     const mappedTests = tests.map(test => {
       const hasFailed = test.status === 'evaluation_failed' || test.test_responses?.some(
-        r => REVIEWABLE_TYPES.includes(r.question?.type || '') && r.evaluation_status === 'FAILED'
+        r => REVIEWABLE_TYPES.includes(r.question?.type || '') && !isEligibilityCategory(r.question?.section) && r.evaluation_status === 'FAILED'
       );
 
       const effectiveStatus = hasFailed ? 'evaluation_failed' : test.status;

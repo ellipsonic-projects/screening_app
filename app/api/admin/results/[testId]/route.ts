@@ -103,7 +103,7 @@ export async function GET(
 
     const hasAnyFailedEvaluation = test.test_responses.some(r => {
       const ai = r.ai_evaluation as any;
-      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type);
+      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
       return isReviewable && (
         r.evaluation_status === 'FAILED' ||
         ai?.evaluation_status === 'FAILED'

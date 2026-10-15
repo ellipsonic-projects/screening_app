@@ -19,6 +19,7 @@ import {
 } from '../lib/categories';
 import { mapQuestionPayload } from '../lib/questionMapper';
 import { recalculateTestScore } from '../lib/services/score-calculation';
+import { processBackgroundEvaluations } from '../lib/services/evaluation-pipeline';
 import { EvaluationRequest } from '../types';
 
 let passed = 0;
@@ -399,11 +400,175 @@ async function runPhase2Tests() {
   assert(checkRanking(['A', 'B', 'D', 'C'], ['A', 'B', 'C', 'D'], 20, false) === 0, 'Ranking awards 0 when allowPartial is false');
 
   // ========================================================
-  // TEST 14: Eligibility excluded from scored totals
+  // TEST 14 & 15: Eligibility Unscored Enforcement & Regression Tests for open_text Eligibility Answers
   // ========================================================
   console.log('\n--- TEST 14: Eligibility Unscored Enforcement ---');
   assert(isEligibilityCategory('ELIGIBILITY') === true, 'ELIGIBILITY is recognized as unscored');
   assert(isEligibilityCategory('Eligibility & Logistics (Unscored)') === true, 'Display label recognized as unscored');
+
+  console.log('\n--- TEST 15: Regression Tests for open_text Eligibility Answers ---');
+  const testStudent = await prisma.student.findFirst();
+  if (testStudent) {
+    const adminUser = await prisma.user.findFirst({ where: { role: 'admin' } }) || await prisma.user.findFirst();
+    const scoredQ = await prisma.question.create({
+      data: {
+        question_text: `Regression Scored Q ${Date.now()}`,
+        type: 'mcq',
+        section: 'APTITUDE',
+        points: 10,
+        options_json: ['A', 'B'],
+        correct_answer: 'A',
+        created_by: adminUser?.id || testStudent.user_id,
+        is_published: true
+      }
+    });
+
+    const openTextEligQ = await prisma.question.create({
+      data: {
+        question_text: `Regression Open-Text Eligibility Q ${Date.now()}`,
+        type: 'open_text',
+        section: 'ELIGIBILITY',
+        points: 0,
+        created_by: adminUser?.id || testStudent.user_id,
+        is_published: true
+      }
+    });
+
+    const regTest = await prisma.test.create({
+      data: {
+        student_id: testStudent.id,
+        status: 'submitted',
+        is_completed: true,
+        total_duration: 30,
+        score: null,
+        test_questions: {
+          create: [
+            { question_id: scoredQ.id, sequence_number: 1 },
+            { question_id: openTextEligQ.id, sequence_number: 2 }
+          ]
+        }
+      }
+    });
+
+    // Subtest A: Non-blank answer to open_text eligibility question
+    await prisma.testResponse.create({
+      data: {
+        test_id: regTest.id,
+        question_id: scoredQ.id,
+        student_answer: 'A',
+        points_earned: 10,
+        is_correct: true,
+        evaluation_status: 'COMPLETED'
+      }
+    });
+
+    const nonBlankEligResp = await prisma.testResponse.create({
+      data: {
+        test_id: regTest.id,
+        question_id: openTextEligQ.id,
+        student_answer: 'I am graduating in 2026 and available full time.',
+        points_earned: null,
+        evaluation_status: 'PENDING'
+      }
+    });
+
+    // Pass non-blank eligibility answer to processBackgroundEvaluations
+    await processBackgroundEvaluations([{
+      testId: regTest.id,
+      questionId: openTextEligQ.id,
+      studentAnswer: 'I am graduating in 2026 and available full time.'
+    }], regTest.id);
+
+    // Verify it was marked COMPLETED with 0 marks without calling AI engine
+    const updatedNonBlankEligResp = await prisma.testResponse.findUnique({
+      where: { id: nonBlankEligResp.id }
+    });
+
+    assert(
+      updatedNonBlankEligResp?.evaluation_status === 'COMPLETED',
+      'Non-blank open_text eligibility answer is marked COMPLETED without calling AI'
+    );
+    assert(
+      Number(updatedNonBlankEligResp?.points_earned) === 0,
+      'Non-blank open_text eligibility answer is awarded exactly 0 points'
+    );
+
+    await recalculateTestScore(regTest.id);
+    const refreshedRegTest = await prisma.test.findUnique({ where: { id: regTest.id } });
+
+    assert(
+      refreshedRegTest?.status !== 'evaluation_failed',
+      'Non-blank open_text eligibility answer does NOT cause assessment to become evaluation_failed'
+    );
+    assert(
+      Number(refreshedRegTest?.score) === 10,
+      'Assessment total score correctly preserves scored question marks (got: 10)'
+    );
+
+    // Subtest B: Blank answer to open_text eligibility question
+    await prisma.testResponse.update({
+      where: { id: nonBlankEligResp.id },
+      data: {
+        student_answer: '',
+        points_earned: null,
+        evaluation_status: 'PENDING'
+      }
+    });
+
+    await processBackgroundEvaluations([{
+      testId: regTest.id,
+      questionId: openTextEligQ.id,
+      studentAnswer: ''
+    }], regTest.id);
+
+    const updatedBlankEligResp = await prisma.testResponse.findUnique({
+      where: { id: nonBlankEligResp.id }
+    });
+
+    assert(
+      updatedBlankEligResp?.evaluation_status === 'COMPLETED',
+      'Blank open_text eligibility answer is marked COMPLETED'
+    );
+    assert(
+      Number(updatedBlankEligResp?.points_earned) === 0,
+      'Blank open_text eligibility answer is awarded exactly 0 points'
+    );
+
+    await recalculateTestScore(regTest.id);
+    const refreshedRegTestBlank = await prisma.test.findUnique({ where: { id: regTest.id } });
+
+    assert(
+      refreshedRegTestBlank?.status !== 'evaluation_failed',
+      'Blank open_text eligibility answer does NOT cause assessment to become evaluation_failed'
+    );
+    assert(
+      Number(refreshedRegTestBlank?.score) === 10,
+      'Assessment total score remains 10 with blank eligibility response'
+    );
+
+    // Subtest C: Admin failure detection ignores eligibility open_text
+    const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
+    const fakeFailedEligResponse = {
+      evaluation_status: 'FAILED',
+      question: { type: 'open_text', section: 'ELIGIBILITY' }
+    };
+    const isFailedCandidate = REVIEWABLE_TYPES.includes(fakeFailedEligResponse.question.type) && 
+      !isEligibilityCategory(fakeFailedEligResponse.question.section) && 
+      fakeFailedEligResponse.evaluation_status === 'FAILED';
+
+    assert(
+      isFailedCandidate === false,
+      'Failed-evaluation detector in admin results and evaluation APIs strictly ignores unscored Eligibility questions'
+    );
+
+    // Cleanup regression records
+    await prisma.aIEvaluation.deleteMany({ where: { test_id: regTest.id } });
+    await prisma.testAnalytics.deleteMany({ where: { test_id: regTest.id } });
+    await prisma.testResponse.deleteMany({ where: { test_id: regTest.id } });
+    await prisma.testQuestion.deleteMany({ where: { test_id: regTest.id } });
+    await prisma.test.delete({ where: { id: regTest.id } });
+    await prisma.question.deleteMany({ where: { id: { in: [scoredQ.id, openTextEligQ.id] } } });
+  }
 
   // ========================================================
   // TEST 17: Legacy evaluation records render safely

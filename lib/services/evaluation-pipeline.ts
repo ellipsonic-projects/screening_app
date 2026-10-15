@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { evaluateAnswer } from '@/lib/evaluation-engine';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
+import { isEligibilityCategory } from '@/lib/categories';
 import { EvaluationRequest } from '@/types';
 
 export interface BackgroundEvalPayload {
@@ -50,6 +51,27 @@ export async function processBackgroundEvaluations(
         const question = await prisma.question.findUnique({ where: { id: questionId } });
         if (!question) {
           console.warn(`[Background Evaluation] Question ${questionId} not found in DB`);
+          continue;
+        }
+
+        // Defense-in-depth: Unscored Eligibility & Logistics questions must never be evaluated by AI
+        if (isEligibilityCategory(question.section)) {
+          if (existingResponse) {
+            await prisma.testResponse.update({
+              where: { id: existingResponse.id },
+              data: {
+                points_earned: 0,
+                is_correct: null,
+                evaluation_status: 'COMPLETED',
+                ai_evaluation_json: {
+                  evaluationStatus: 'COMPLETED',
+                  score: 0,
+                  feedback: 'Eligibility and logistics questions are unscored.',
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+          }
           continue;
         }
 

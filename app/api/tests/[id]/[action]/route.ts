@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { enqueueEvaluationJob } from '@/lib/queue/evaluation-queue';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
 import { SubmitTestResponseSchema } from '@/lib/validators';
+import { isEligibilityCategory } from '@/lib/categories';
 import vm from 'vm';
 
 export const maxDuration = 60;
@@ -117,11 +118,36 @@ export async function POST(
         where: {
           test_id: id,
           question_id: questionId
-        }
+        },
+        include: { question: true }
       });
 
       if (!testResponse) {
         return NextResponse.json({ message: 'Submission not found' }, { status: 404 });
+      }
+
+      if (testResponse.question && isEligibilityCategory(testResponse.question.section)) {
+        await prisma.testResponse.update({
+          where: { id: testResponse.id },
+          data: {
+            points_earned: 0,
+            is_correct: null,
+            evaluation_status: 'COMPLETED',
+            ai_evaluation_json: {
+              evaluationStatus: 'COMPLETED',
+              score: 0,
+              feedback: 'Eligibility and logistics questions are unscored.',
+              evaluatedAt: new Date().toISOString()
+            }
+          }
+        });
+
+        await recalculateTestScore(id);
+
+        return NextResponse.json({
+          message: 'Eligibility question is unscored and marked COMPLETED',
+          status: 'COMPLETED'
+        });
       }
 
       const trimmedAnswer = (testResponse.student_answer || '').trim();
@@ -334,6 +360,26 @@ export async function POST(
           });
 
           const q = questionMap.get(response.questionId);
+
+          // Unscored Eligibility & Logistics questions: NEVER send to AI queue, grade immediately as COMPLETED with 0 marks
+          if (q && isEligibilityCategory(q.section)) {
+            await prisma.testResponse.updateMany({
+              where: { test_id: test.id, question_id: response.questionId },
+              data: {
+                points_earned: 0,
+                is_correct: null,
+                evaluation_status: 'COMPLETED',
+                ai_evaluation_json: {
+                  evaluationStatus: 'COMPLETED',
+                  score: 0,
+                  feedback: 'Eligibility and logistics response recorded.',
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+            continue;
+          }
+
           const aiEvaluableTypes = ['coding', 'structured_response', 'open_text'];
           if (q && aiEvaluableTypes.includes(q.type)) {
             const trimmedAnswer = (response.answer || '').trim();
