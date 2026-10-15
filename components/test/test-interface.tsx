@@ -264,7 +264,7 @@ export function TestInterface({ testId }: { testId: string }) {
         setAnswers(initialAnswers);
       }
 
-      if (t.status === 'submitted' || t.status === 'auto_submitted' || t.isCompleted || (t as any).is_completed) {
+      if (t.status === 'submitted' || t.status === 'auto_submitted' || t.status === 'ineligible_attempt' || t.isCompleted || (t as any).is_completed) {
         setIsLoading(false);
         if (t.status === 'auto_submitted') {
           setShowInstructions(false);
@@ -357,7 +357,7 @@ export function TestInterface({ testId }: { testId: string }) {
   }, [testId, test, router]);
 
   const handleClearAnswer = useCallback((questionId: string) => {
-    if (!test || test.status === 'submitted' || test.status === 'auto_submitted' || (test as any).isCompleted || (test as any).is_completed || submittingRef.current) {
+    if (!test || test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'ineligible_attempt' || (test as any).isCompleted || (test as any).is_completed || submittingRef.current) {
       return;
     }
 
@@ -423,7 +423,7 @@ export function TestInterface({ testId }: { testId: string }) {
 
   const submitTest = async (isTimeout = false) => {
     if (!test || submittingRef.current) return;
-    if (test.status === 'submitted' || test.status === 'auto_submitted' || (test as any).isCompleted || (test as any).is_completed) {
+    if (test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'ineligible_attempt' || (test as any).isCompleted || (test as any).is_completed) {
       if (isTimeout) {
         setShowAutoSubmitModal(true);
       } else {

@@ -109,6 +109,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'One or more selected questions do not exist in the question bank' }, { status: 400 });
     }
 
+    const config = await prisma.testTemplate.findFirst({
+      where: { name: 'MASTER_TEST_CONFIG' }
+    });
+    const minAttemptPercentage = config?.min_attempt_percentage ?? 60;
+    const minAttemptEnabled = config?.min_attempt_enabled ?? true;
+
     // Atomic transaction across all students
     let publishedCount = 0;
     let alreadyAssignedCount = 0;
@@ -150,6 +156,8 @@ export async function POST(request: NextRequest) {
             total_duration: totalDuration,
             status: 'not_started',
             is_completed: false,
+            min_attempt_percentage: minAttemptPercentage,
+            min_attempt_enabled: minAttemptEnabled,
           }
         });
 

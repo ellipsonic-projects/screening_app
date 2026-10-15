@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
           name: MASTER_TEST_NAME,
           total_duration: 60,
           total_questions: 30,
+          min_attempt_percentage: 60,
+          min_attempt_enabled: true,
           created_by: decoded.userId
         }
       });
@@ -56,7 +58,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
-    const { total_duration, total_questions } = await request.json();
+    const { total_duration, total_questions, min_attempt_percentage, min_attempt_enabled } = await request.json();
+
+    const parsedMinPercentage = min_attempt_percentage !== undefined
+      ? Math.max(1, Math.min(100, Math.round(Number(min_attempt_percentage))))
+      : undefined;
+    const parsedMinEnabled = min_attempt_enabled !== undefined
+      ? Boolean(min_attempt_enabled)
+      : undefined;
 
     let config = await prisma.testTemplate.findFirst({
       where: { name: MASTER_TEST_NAME }
@@ -68,6 +77,8 @@ export async function POST(request: NextRequest) {
         data: {
           total_duration: Number(total_duration),
           total_questions: total_questions ? Number(total_questions) : config.total_questions,
+          min_attempt_percentage: parsedMinPercentage !== undefined ? parsedMinPercentage : (config.min_attempt_percentage ?? 60),
+          min_attempt_enabled: parsedMinEnabled !== undefined ? parsedMinEnabled : (config.min_attempt_enabled ?? true),
           updated_at: new Date()
         }
       });
@@ -77,6 +88,8 @@ export async function POST(request: NextRequest) {
           name: MASTER_TEST_NAME,
           total_duration: Number(total_duration),
           total_questions: Number(total_questions) || 30,
+          min_attempt_percentage: parsedMinPercentage !== undefined ? parsedMinPercentage : 60,
+          min_attempt_enabled: parsedMinEnabled !== undefined ? parsedMinEnabled : true,
           created_by: decoded.userId
         }
       });

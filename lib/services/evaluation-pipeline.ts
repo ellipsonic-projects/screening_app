@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { evaluateAnswer } from '@/lib/evaluation-engine';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
 import { isEligibilityCategory } from '@/lib/categories';
+import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
 import { EvaluationRequest } from '@/types';
 
 export interface BackgroundEvalPayload {
@@ -32,6 +33,11 @@ export async function processBackgroundEvaluations(
     const test = await prisma.test.findUnique({ where: { id: testId } });
     if (!test) {
       console.warn(`[Background Evaluation] Test not found for ID: ${testId}`);
+      return;
+    }
+
+    if (test.status === 'ineligible_attempt') {
+      console.warn(`[Background Evaluation] Ineligible attempt cannot be evaluated: ${testId}`);
       return;
     }
 
@@ -308,6 +314,96 @@ export async function gradePersistedTestResponses(testId: string): Promise<numbe
 
   if (!test) {
     throw new Error(`Test ${testId} not found`);
+  }
+
+  if (test.status === 'ineligible_attempt') {
+    return 0;
+  }
+
+  // Enforce attempt eligibility gate
+  const eligibility = assessTestAttemptEligibility(
+    test.test_questions,
+    test.test_responses,
+    undefined,
+    {
+      enabled: test.min_attempt_enabled ?? true,
+      minPercentage: test.min_attempt_percentage ?? 60
+    }
+  );
+
+  if (!eligibility.isEligible) {
+    await prisma.test.update({
+      where: { id: testId },
+      data: {
+        status: 'ineligible_attempt',
+        score: null,
+        is_completed: true,
+        updated_at: new Date()
+      }
+    });
+
+    for (const resp of test.test_responses || []) {
+      await prisma.testResponse.update({
+        where: { id: resp.id },
+        data: {
+          points_earned: null,
+          is_correct: null,
+          evaluation_status: null,
+          ai_evaluation_json: {
+            evaluationStatus: 'INELIGIBLE_ATTEMPT',
+            score: null,
+            reason: `Minimum attempt requirement not met (${eligibility.attemptedCount}/${eligibility.requiredAttempts} required).`,
+            attemptedCount: eligibility.attemptedCount,
+            requiredAttempts: eligibility.requiredAttempts,
+            applicableQuestionsCount: eligibility.applicableQuestionsCount,
+            evaluatedAt: new Date().toISOString()
+          }
+        }
+      });
+    }
+
+    await prisma.testAnalytics.upsert({
+      where: { test_id: testId },
+      update: {
+        total_score: null,
+        overall_percentage: null,
+        overall_ai_marks: null,
+        correct_answers: null,
+        incorrect_answers: null,
+        unanswered: eligibility.applicableQuestionsCount - eligibility.attemptedCount,
+        total_questions: eligibility.applicableQuestionsCount,
+        section_totals: {
+          attemptEligibility: {
+            isEligible: false,
+            attemptedCount: eligibility.attemptedCount,
+            requiredAttempts: eligibility.requiredAttempts,
+            applicableQuestionsCount: eligibility.applicableQuestionsCount,
+            minPercentage: eligibility.minPercentage
+          }
+        }
+      },
+      create: {
+        test_id: testId,
+        total_score: null,
+        overall_percentage: null,
+        overall_ai_marks: null,
+        correct_answers: null,
+        incorrect_answers: null,
+        unanswered: eligibility.applicableQuestionsCount - eligibility.attemptedCount,
+        total_questions: eligibility.applicableQuestionsCount,
+        section_totals: {
+          attemptEligibility: {
+            isEligible: false,
+            attemptedCount: eligibility.attemptedCount,
+            requiredAttempts: eligibility.requiredAttempts,
+            applicableQuestionsCount: eligibility.applicableQuestionsCount,
+            minPercentage: eligibility.minPercentage
+          }
+        }
+      }
+    });
+
+    return 0;
   }
 
   const questionMap = new Map();

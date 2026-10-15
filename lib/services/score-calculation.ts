@@ -13,6 +13,31 @@ export async function recalculateTestScore(testId: string): Promise<number> {
 
   if (!test) throw new Error(`Test ${testId} not found`);
 
+  if (test.status === 'ineligible_attempt') {
+    // Ineligible attempts must NEVER be awarded marks or evaluated
+    await prisma.test.update({
+      where: { id: testId },
+      data: { score: null }
+    });
+
+    await prisma.testAnalytics.upsert({
+      where: { test_id: testId },
+      update: {
+        total_score: null,
+        overall_percentage: null,
+        overall_ai_marks: null
+      },
+      create: {
+        test_id: testId,
+        total_score: null,
+        overall_percentage: null,
+        overall_ai_marks: null
+      }
+    });
+
+    return 0;
+  }
+
   // Calculate maximum possible points for the test (Eligibility is unscored)
   let totalPossiblePoints = 0;
   for (const tq of test.test_questions) {

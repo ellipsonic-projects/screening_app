@@ -78,6 +78,8 @@ export async function GET(request: NextRequest) {
 
     const totalDuration = config?.total_duration || 60;
     const totalQuestions = config?.total_questions || 30;
+    const minAttemptPercentage = config?.min_attempt_percentage ?? 60;
+    const minAttemptEnabled = config?.min_attempt_enabled ?? true;
 
     // 2. Fetch active questions
     const allQuestions = await prisma.question.findMany({
@@ -113,6 +115,8 @@ export async function GET(request: NextRequest) {
           student_id: student.id,
           total_duration: totalDuration,
           status: 'not_started',
+          min_attempt_percentage: minAttemptPercentage,
+          min_attempt_enabled: minAttemptEnabled,
         }
       });
 

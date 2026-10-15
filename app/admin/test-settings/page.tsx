@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { ArrowLeft, Database, Settings, Clock, FileText, Info, Save, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Database, Settings, Clock, FileText, Info, Save, AlertTriangle, CheckCircle2, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TestSettingsPage() {
   const [duration, setDuration] = useState(60);
   const [questions, setQuestions] = useState(30);
+  const [minAttemptEnabled, setMinAttemptEnabled] = useState(true);
+  const [minAttemptPercentage, setMinAttemptPercentage] = useState(60);
   const [availableQuestions, setAvailableQuestions] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -26,6 +28,8 @@ export default function TestSettingsPage() {
         if (configRes.data.config) {
           setDuration(configRes.data.config.total_duration);
           setQuestions(configRes.data.config.total_questions);
+          setMinAttemptEnabled(configRes.data.config.min_attempt_enabled !== false);
+          setMinAttemptPercentage(configRes.data.config.min_attempt_percentage ?? 60);
         }
       } catch (err) {
         console.error('Failed to load config', err);
@@ -58,7 +62,12 @@ export default function TestSettingsPage() {
       const token = localStorage.getItem('token');
       await axios.post(
         '/api/admin/test-settings', 
-        { total_duration: duration, total_questions: questions },
+        { 
+          total_duration: duration, 
+          total_questions: questions,
+          min_attempt_percentage: minAttemptPercentage,
+          min_attempt_enabled: minAttemptEnabled
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMessage('Test Settings saved successfully!');
@@ -326,6 +335,95 @@ export default function TestSettingsPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Minimum Attempt Eligibility Gate Section */}
+            <div className="pt-8 border-t border-[#EEF3FA] space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-[#F8FAFD] border border-[#E2ECF8]">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-full bg-[#EAF2FE] text-[#1760FF] flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                    <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-[13px] sm:text-[14px] font-bold text-[#10234E] tracking-tight">
+                        Minimum Attempt Eligibility Gate
+                      </h3>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                        minAttemptEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {minAttemptEnabled ? 'Active' : 'Disabled'}
+                      </span>
+                    </div>
+                    <p className="text-[12px] sm:text-[13px] text-[#607797] mt-0.5 leading-relaxed">
+                      Require candidates to attempt a minimum percentage of applicable questions before grading answers or awarding marks.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Enable / Disable Toggle Switch */}
+                <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+                  <label htmlFor="minAttemptToggle" className="text-xs font-semibold text-[#607797] cursor-pointer select-none">
+                    {minAttemptEnabled ? 'Enabled' : 'Disabled'}
+                  </label>
+                  <button
+                    id="minAttemptToggle"
+                    type="button"
+                    role="switch"
+                    aria-checked={minAttemptEnabled}
+                    onClick={() => setMinAttemptEnabled(!minAttemptEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1760FF] focus:ring-offset-2 cursor-pointer ${
+                      minAttemptEnabled ? 'bg-[#1760FF]' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${
+                        minAttemptEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {minAttemptEnabled && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start p-5 rounded-2xl bg-white border border-[#E2ECF8]">
+                  <div className="space-y-3">
+                    <label className="block text-[11px] sm:text-[12px] font-bold uppercase tracking-wider text-[#10234E]">
+                      REQUIRED ATTEMPT THRESHOLD
+                    </label>
+                    <div className="flex items-center h-[52px] rounded-xl border border-[#DCE5F0] bg-white overflow-hidden focus-within:border-[#1760FF] focus-within:ring-4 focus-within:ring-[#1760FF]/10 transition-all shadow-[0_1px_3px_rgba(16,35,78,0.02)]">
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        required={minAttemptEnabled}
+                        value={minAttemptPercentage}
+                        onChange={(e) => setMinAttemptPercentage(Math.max(1, Math.min(100, Number(e.target.value))))}
+                        className="flex-1 h-full px-4 text-[17px] font-semibold text-[#10234E] outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="px-5 h-full bg-[#F4F7FC]/70 border-l border-[#DCE5F0] text-[#607797] text-[14px] font-bold flex items-center select-none">
+                        %
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[#607797] leading-relaxed">
+                      Default is 60%. Answers are counted regardless of correctness, excluding blank answers and Eligibility questions.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#F0F6FD] border border-[#DCE8F8] space-y-2">
+                    <div className="flex items-center gap-2 text-[#1760FF] font-semibold text-xs uppercase tracking-wider">
+                      <Info className="w-4 h-4 stroke-[2.2]" />
+                      <span>Ceiling Rounding Calculation Preview</span>
+                    </div>
+                    <p className="text-xs text-[#405674] leading-relaxed">
+                      With <strong className="font-semibold text-[#10234E]">{questions}</strong> questions configured at <strong className="font-semibold text-[#10234E]">{minAttemptPercentage}%</strong>, a student must attempt at least <strong className="font-bold text-[#1760FF]">{Math.ceil((questions * minAttemptPercentage) / 100)}</strong> applicable questions.
+                    </p>
+                    <p className="text-[11px] text-[#607797]">
+                      Submissions below this threshold will not be graded or sent to AI evaluation, and will be preserved as an ineligible attempt.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bottom Section with Divider and Save Button */}

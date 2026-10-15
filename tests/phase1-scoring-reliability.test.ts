@@ -552,6 +552,9 @@ async function runPhase1Tests() {
 
   // Clean up
   await prisma.test.delete({ where: { id: concurrentTest.id } });
+  await prisma.testResponse.deleteMany({ where: { question_id: { in: [mcqQuestion.id, codingQuestion.id, eligibilityQuestion.id] } } });
+  await prisma.testQuestion.deleteMany({ where: { question_id: { in: [mcqQuestion.id, codingQuestion.id, eligibilityQuestion.id] } } });
+  await prisma.question.deleteMany({ where: { id: { in: [mcqQuestion.id, codingQuestion.id, eligibilityQuestion.id] } } });
 
   // Clean up test student if we created one
   if (testUser.email === 'phase1_test_student@example.com') {

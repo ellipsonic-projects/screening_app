@@ -219,6 +219,18 @@ export async function PATCH(
     const { status, evaluations } = data;
 
     if (evaluations && Array.isArray(evaluations)) {
+      const currentTest = await prisma.test.findUnique({
+        where: { id },
+        select: { status: true }
+      });
+
+      if (currentTest?.status === 'ineligible_attempt') {
+        return NextResponse.json(
+          { message: 'Cannot evaluate or award marks to an attempt that did not meet minimum attempt requirements' },
+          { status: 400 }
+        );
+      }
+
       for (const ev of evaluations) {
         const { questionId, pointsEarned, remarks } = ev;
 
@@ -299,7 +311,7 @@ export async function PATCH(
       return NextResponse.json({ message: 'Test not found' }, { status: 404 });
     }
 
-    if (status === 'in_progress' && (existingTest.is_completed || existingTest.status === 'submitted' || existingTest.status === 'auto_submitted')) {
+    if (status === 'in_progress' && (existingTest.is_completed || existingTest.status === 'submitted' || existingTest.status === 'auto_submitted' || existingTest.status === 'ineligible_attempt')) {
       return NextResponse.json(
         { message: 'Assessment has already been completed and cannot be restarted', status: existingTest.status },
         { status: 409 }

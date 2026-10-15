@@ -5,6 +5,7 @@ import { enqueueEvaluationJob } from '@/lib/queue/evaluation-queue';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
 import { SubmitTestResponseSchema } from '@/lib/validators';
 import { isEligibilityCategory } from '@/lib/categories';
+import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
 import vm from 'vm';
 
 export const maxDuration = 60;
@@ -105,6 +106,15 @@ export async function POST(
     if (action === 'reevaluate') {
       if (!id || typeof id !== 'string' || id.trim() === '') {
         return NextResponse.json({ message: 'Valid testId is required in the route parameter' }, { status: 400 });
+      }
+
+      const testRecord = await prisma.test.findUnique({
+        where: { id },
+        select: { status: true }
+      });
+
+      if (testRecord?.status === 'ineligible_attempt') {
+        return NextResponse.json({ message: 'Cannot evaluate an ineligible attempt' }, { status: 400 });
       }
 
       const data = await request.json().catch(() => ({}));
@@ -306,7 +316,24 @@ export async function POST(
       }
 
       const validatedData = validationResult.data;
-      const targetStatus = validatedData.status || 'submitted';
+
+      // Load existing responses to have complete candidate responses
+      const existingResponses = await prisma.testResponse.findMany({
+        where: { test_id: test.id },
+        select: { question_id: true, student_answer: true }
+      });
+
+      const eligibility = assessTestAttemptEligibility(
+        test.test_questions,
+        existingResponses,
+        validatedData.responses?.map(r => ({ questionId: r.questionId, answer: r.answer })),
+        {
+          enabled: test.min_attempt_enabled ?? true,
+          minPercentage: test.min_attempt_percentage ?? 60
+        }
+      );
+
+      const targetStatus = eligibility.isEligible ? (validatedData.status || 'submitted') : 'ineligible_attempt';
 
       // Atomic transition check to prevent duplicate evaluation processing from repeated / concurrent submissions
       const claimed = await prisma.test.updateMany({
@@ -318,6 +345,7 @@ export async function POST(
         data: {
           status: targetStatus,
           is_completed: true,
+          score: null,
           end_time: new Date(),
           updated_at: new Date()
         }
@@ -325,6 +353,105 @@ export async function POST(
 
       if (claimed.count === 0) {
         return NextResponse.json({ message: 'Test has already been submitted', status: test.status }, { status: 409 });
+      }
+
+      if (!eligibility.isEligible) {
+        if (validatedData.responses && validatedData.responses.length > 0) {
+          for (const response of validatedData.responses) {
+            if (!response.questionId) continue;
+
+            await prisma.testResponse.upsert({
+              where: {
+                test_question_unique: {
+                  test_id: test.id,
+                  question_id: response.questionId
+                }
+              },
+              update: {
+                student_answer: response.answer || '',
+                submitted_at: new Date(),
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: null,
+                ai_evaluation_json: {
+                  evaluationStatus: 'INELIGIBLE_ATTEMPT',
+                  score: null,
+                  reason: `Minimum attempt requirement not met (${eligibility.attemptedCount}/${eligibility.requiredAttempts} required).`,
+                  attemptedCount: eligibility.attemptedCount,
+                  requiredAttempts: eligibility.requiredAttempts,
+                  applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                  evaluatedAt: new Date().toISOString()
+                }
+              },
+              create: {
+                test_id: test.id,
+                question_id: response.questionId,
+                student_answer: response.answer || '',
+                submitted_at: new Date(),
+                started_at: new Date(),
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: null,
+                ai_evaluation_json: {
+                  evaluationStatus: 'INELIGIBLE_ATTEMPT',
+                  score: null,
+                  reason: `Minimum attempt requirement not met (${eligibility.attemptedCount}/${eligibility.requiredAttempts} required).`,
+                  attemptedCount: eligibility.attemptedCount,
+                  requiredAttempts: eligibility.requiredAttempts,
+                  applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+          }
+        }
+
+        await prisma.testAnalytics.upsert({
+          where: { test_id: test.id },
+          update: {
+            total_score: null,
+            overall_percentage: null,
+            overall_ai_marks: null,
+            correct_answers: null,
+            incorrect_answers: null,
+            unanswered: eligibility.applicableQuestionsCount - eligibility.attemptedCount,
+            total_questions: eligibility.applicableQuestionsCount,
+            section_totals: {
+              attemptEligibility: {
+                isEligible: false,
+                attemptedCount: eligibility.attemptedCount,
+                requiredAttempts: eligibility.requiredAttempts,
+                applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                minPercentage: eligibility.minPercentage
+              }
+            }
+          },
+          create: {
+            test_id: test.id,
+            total_score: null,
+            overall_percentage: null,
+            overall_ai_marks: null,
+            correct_answers: null,
+            incorrect_answers: null,
+            unanswered: eligibility.applicableQuestionsCount - eligibility.attemptedCount,
+            total_questions: eligibility.applicableQuestionsCount,
+            section_totals: {
+              attemptEligibility: {
+                isEligible: false,
+                attemptedCount: eligibility.attemptedCount,
+                requiredAttempts: eligibility.requiredAttempts,
+                applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                minPercentage: eligibility.minPercentage
+              }
+            }
+          }
+        });
+
+        return NextResponse.json({
+          message: 'Test submitted. Minimum attempt threshold was not met; answers are not eligible for evaluation.',
+          status: 'ineligible_attempt',
+          isAttemptEligible: false
+        });
       }
 
       const evalPayloads: any[] = [];

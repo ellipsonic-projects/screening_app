@@ -54,6 +54,8 @@ export async function GET(
       label: CATEGORIES[id].label
     }));
 
+    const isIneligible = test.status === 'ineligible_attempt';
+
     const finalSectionScores = SECTIONS.map(sec => {
       const isSecEligibility = isEligibilityCategory(sec.id);
       const questionsInSection = test.test_questions.filter((tq: any) => 
@@ -64,7 +66,7 @@ export async function GET(
       );
       
       const totalMarks = isSecEligibility ? null : questionsInSection.reduce((sum: number, tq: any) => sum + (tq.question.points || 0), 0);
-      const marksObtained = isSecEligibility ? null : responsesInSection.reduce((sum: number, r: any) => {
+      const marksObtained = (isSecEligibility || isIneligible) ? null : responsesInSection.reduce((sum: number, r: any) => {
         const ai = r.ai_evaluation as any;
         const earned = ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined 
           ? Number(ai.obtained_marks) 
@@ -76,7 +78,7 @@ export async function GET(
         sectionName: sec.label,
         marksObtained,
         totalMarks,
-        isCompleted: test.status === 'submitted' || test.status === 'auto_submitted'
+        isCompleted: !isIneligible && (test.status === 'submitted' || test.status === 'auto_submitted')
       };
     });
 
@@ -110,12 +112,15 @@ export async function GET(
       );
     });
 
-    const effectiveStatus = (test.status === 'evaluation_failed' || hasAnyFailedEvaluation) 
-      ? 'evaluation_failed' 
-      : test.status;
+    let effectiveStatus = test.status;
+    if (isIneligible) {
+      effectiveStatus = 'ineligible_attempt';
+    } else if (test.status === 'evaluation_failed' || hasAnyFailedEvaluation) {
+      effectiveStatus = 'evaluation_failed';
+    }
 
     const scores = {
-      overallScore: effectiveStatus === 'evaluation_failed'
+      overallScore: (effectiveStatus === 'evaluation_failed' || isIneligible)
         ? null
         : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
       overallTotalMarks,
@@ -137,7 +142,9 @@ export async function GET(
           const isAiReviewable = REVIEWABLE_TYPES.includes(r.question.type);
 
           let status: string;
-          if (isEligibility) {
+          if (isIneligible) {
+            status = 'INELIGIBLE_ATTEMPT';
+          } else if (isEligibility) {
             status = 'ELIGIBILITY_ONLY';
           } else if (isAiReviewable) {
             if (ai?.evaluation_status) {
@@ -157,7 +164,7 @@ export async function GET(
           const isFailed = status === 'FAILED';
 
           let pointsEarned: number | null = null;
-          if (isEligibility || isFailed) {
+          if (isIneligible || isEligibility || isFailed) {
             pointsEarned = null;
           } else if (isAiReviewable) {
             if (ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined && isCompleted) {
@@ -177,7 +184,7 @@ export async function GET(
             studentAnswer: r.student_answer,
             pointsEarned,
             maxPoints: isEligibility ? null : (ai?.maximum_marks ?? r.question.points ?? 0),
-            isCorrect: isFailed ? false : r.is_correct,
+            isCorrect: (isIneligible || isFailed) ? false : r.is_correct,
             status,
             feedback: ai?.feedback,
             strengths: ai?.strengths,
@@ -207,7 +214,12 @@ export async function GET(
         totalDuration: test.total_duration,
         timeTaken: test.start_time && test.end_time ? Math.round((new Date(test.end_time).getTime() - new Date(test.start_time).getTime()) / 60000) : (test.analytics?.time_taken || null),
         scores,
-        aiEvaluationsBySection
+        aiEvaluationsBySection,
+        attemptEligibility: {
+          isEligible: !isIneligible,
+          minAttemptPercentage: test.min_attempt_percentage ?? 60,
+          minAttemptEnabled: test.min_attempt_enabled ?? true
+        }
       }
     });
 

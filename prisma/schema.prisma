@@ -107,6 +107,8 @@ model Test {
   score            Decimal?  @db.Decimal(5, 2)
   is_completed     Boolean?  @default(false)
   results_published Boolean  @default(false)
+  min_attempt_percentage Int?  @default(60)
+  min_attempt_enabled    Boolean? @default(true)
   created_at       DateTime  @default(now()) @db.Timestamp(6)
   updated_at       DateTime  @default(now()) @db.Timestamp(6)
 
@@ -182,6 +184,8 @@ model TestTemplate {
   total_duration  Int
   created_by      String    @db.Uuid
   is_active       Boolean?  @default(true)
+  min_attempt_percentage Int? @default(60)
+  min_attempt_enabled    Boolean? @default(true)
   created_at      DateTime  @default(now()) @db.Timestamp(6)
   updated_at      DateTime  @default(now()) @db.Timestamp(6)
 

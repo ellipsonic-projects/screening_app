@@ -36,6 +36,22 @@ export async function POST(
       return NextResponse.json({ error: 'Score cannot be negative' }, { status: 400 });
     }
 
+    const testRecord = await prisma.test.findUnique({
+      where: { id: testId },
+      select: { status: true, student_id: true }
+    });
+
+    if (!testRecord) {
+      return NextResponse.json({ error: 'Test not found' }, { status: 404 });
+    }
+
+    if (testRecord.status === 'ineligible_attempt') {
+      return NextResponse.json(
+        { error: 'Cannot override score for an attempt that did not meet minimum attempt requirements' },
+        { status: 400 }
+      );
+    }
+
     const existingResponse = await prisma.testResponse.findFirst({
       where: { test_id: testId, question_id: questionId }
     });

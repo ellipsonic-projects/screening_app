@@ -43,7 +43,12 @@ export async function GET(request: NextRequest) {
         r => REVIEWABLE_TYPES.includes(r.question?.type || '') && !isEligibilityCategory(r.question?.section) && r.evaluation_status === 'FAILED'
       );
 
-      const effectiveStatus = hasFailed ? 'evaluation_failed' : test.status;
+      let effectiveStatus = test.status;
+      if (test.status === 'ineligible_attempt') {
+        effectiveStatus = 'ineligible_attempt';
+      } else if (hasFailed) {
+        effectiveStatus = 'evaluation_failed';
+      }
 
       return {
         id: test.id,
@@ -52,7 +57,7 @@ export async function GET(request: NextRequest) {
         branch: test.student?.branch_name || '',
         email: test.student?.user?.email || '',
         status: effectiveStatus,
-        score: effectiveStatus === 'evaluation_failed' ? null : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
+        score: (effectiveStatus === 'evaluation_failed' || effectiveStatus === 'ineligible_attempt') ? null : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
         violations: test.violations_count || 0,
         createdAt: test.created_at,
         submittedAt: test.end_time,

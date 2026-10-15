@@ -98,7 +98,17 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json();
-    const { studentId, questionIds, totalDuration } = data;
+    const { studentId, questionIds, totalDuration, minAttemptPercentage, minAttemptEnabled } = data;
+
+    const config = await prisma.testTemplate.findFirst({
+      where: { name: 'MASTER_TEST_CONFIG' }
+    });
+    const finalMinPercentage = minAttemptPercentage !== undefined
+      ? Number(minAttemptPercentage)
+      : (config?.min_attempt_percentage ?? 60);
+    const finalMinEnabled = minAttemptEnabled !== undefined
+      ? Boolean(minAttemptEnabled)
+      : (config?.min_attempt_enabled ?? true);
 
     const test = await prisma.$transaction(async (tx) => {
       const newTest = await tx.test.create({
@@ -106,7 +116,9 @@ export async function POST(request: NextRequest) {
           student_id: studentId,
           total_duration: totalDuration,
           status: 'not_started',
-          violations_count: 0
+          violations_count: 0,
+          min_attempt_percentage: finalMinPercentage,
+          min_attempt_enabled: finalMinEnabled,
         }
       });
       

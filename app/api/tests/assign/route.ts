@@ -79,6 +79,12 @@ export async function POST(request: NextRequest) {
 
     const totalDurationMinutes = totalDuration ? totalDuration : Math.ceil(questions.reduce((acc, q) => acc + (q.time_limit_seconds || 60), 0) / 60);
 
+    const config = await prisma.testTemplate.findFirst({
+      where: { name: 'MASTER_TEST_CONFIG' }
+    });
+    const minAttemptPercentage = config?.min_attempt_percentage ?? 60;
+    const minAttemptEnabled = config?.min_attempt_enabled ?? true;
+
     // Fetch target students
     const students = await prisma.student.findMany({
       select: { id: true }
@@ -99,6 +105,8 @@ export async function POST(request: NextRequest) {
             total_duration: totalDurationMinutes,
             status: 'not_started',
             is_completed: false,
+            min_attempt_percentage: minAttemptPercentage,
+            min_attempt_enabled: minAttemptEnabled,
           }
         });
 
