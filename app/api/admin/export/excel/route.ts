@@ -17,12 +17,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'Only admins can export data' }, { status: 403 });
     }
 
+    const roundParam = request.nextUrl.searchParams.get('round');
+    const templateId = request.nextUrl.searchParams.get('templateId') || request.nextUrl.searchParams.get('assessmentId');
+    const targetRound = roundParam ? parseInt(roundParam, 10) : undefined;
+
+    const testsWhere: any = {};
+    if (targetRound !== undefined && !isNaN(targetRound)) {
+      testsWhere.round = targetRound;
+    }
+    if (templateId) {
+      testsWhere.template_id = templateId;
+    }
+
     // Fetch all required data from Prisma
     const students = await prisma.student.findMany({
       include: {
         user: { select: { email: true } },
         tests: {
+          where: Object.keys(testsWhere).length > 0 ? testsWhere : undefined,
           include: {
+            template: { select: { id: true, name: true } },
             test_responses: {
               include: {
                 question: true,
@@ -30,7 +44,10 @@ export async function GET(request: NextRequest) {
               }
             }
           },
-          orderBy: { created_at: 'desc' }
+          orderBy: [
+            { round: 'asc' },
+            { created_at: 'desc' }
+          ]
         }
       },
       orderBy: { full_name: 'asc' }
@@ -62,6 +79,8 @@ export async function GET(request: NextRequest) {
       { header: 'USN', key: 'usn', width: 15 },
       { header: 'Branch', key: 'branch', width: 20 },
       { header: 'Email', key: 'email', width: 30 },
+      { header: 'Round', key: 'round', width: 10 },
+      { header: 'Assessment', key: 'assessment', width: 30 },
       { header: 'Total Score', key: 'score', width: 15 },
       { header: 'Percentage', key: 'percentage', width: 15 },
       { header: 'Rank', key: 'rank', width: 10 },
@@ -72,27 +91,50 @@ export async function GET(request: NextRequest) {
 
     applyHeaderStyle(summarySheet);
 
-    students.forEach((s, idx) => {
-      const latestTest = s.tests[0]; // Assuming most recent test is the primary one
-      
-      let timeTaken = 'N/A';
-      if (latestTest?.start_time && latestTest?.end_time) {
-        const start = new Date(latestTest.start_time).getTime();
-        const end = new Date(latestTest.end_time).getTime();
-        timeTaken = String(Math.round((end - start) / 60000));
+    let summaryRowRank = 1;
+    students.forEach((s) => {
+      if (!s.tests || s.tests.length === 0) {
+        summarySheet.addRow({
+          name: s.full_name || 'N/A',
+          usn: s.usn || 'N/A',
+          branch: s.branch_name || 'N/A',
+          email: s.user?.email || 'N/A',
+          round: targetRound ?? 'N/A',
+          assessment: 'N/A',
+          score: 'N/A',
+          percentage: 'N/A',
+          rank: summaryRowRank++,
+          status: 'Not Started',
+          time_taken: 'N/A',
+          submission_time: 'N/A',
+        });
+        return;
       }
 
-      summarySheet.addRow({
-        name: s.full_name || 'N/A',
-        usn: s.usn || 'N/A',
-        branch: s.branch_name || 'N/A',
-        email: s.user?.email || 'N/A',
-        score: latestTest?.score != null ? Number(latestTest.score) : 'N/A',
-        percentage: 'N/A', // Compute if needed
-        rank: idx + 1, // Basic sorting by DB returned order, can be enhanced
-        status: latestTest?.status || 'Not Started',
-        time_taken: timeTaken,
-        submission_time: latestTest?.end_time ? new Date(latestTest.end_time).toLocaleString() : 'N/A',
+      s.tests.forEach((test) => {
+        let timeTaken = 'N/A';
+        if (test.start_time && test.end_time) {
+          const start = new Date(test.start_time).getTime();
+          const end = new Date(test.end_time).getTime();
+          timeTaken = String(Math.round((end - start) / 60000));
+        }
+
+        const assessmentTitle = test.title || test.template?.name || (test.round === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment');
+
+        summarySheet.addRow({
+          name: s.full_name || 'N/A',
+          usn: s.usn || 'N/A',
+          branch: s.branch_name || 'N/A',
+          email: s.user?.email || 'N/A',
+          round: test.round || 1,
+          assessment: assessmentTitle,
+          score: test.score != null ? Number(test.score) : 'N/A',
+          percentage: 'N/A',
+          rank: summaryRowRank++,
+          status: test.status || 'Not Started',
+          time_taken: timeTaken,
+          submission_time: test.end_time ? new Date(test.end_time).toLocaleString() : 'N/A',
+        });
       });
     });
 
@@ -101,6 +143,8 @@ export async function GET(request: NextRequest) {
     qSheet.columns = [
       { header: 'Student Name', key: 'student', width: 20 },
       { header: 'USN', key: 'usn', width: 15 },
+      { header: 'Round', key: 'round', width: 10 },
+      { header: 'Assessment', key: 'assessment', width: 25 },
       { header: 'Test ID', key: 'test_id', width: 36 },
       { header: 'Section', key: 'section', width: 20 },
       { header: 'Question Type', key: 'type', width: 20 },
@@ -117,6 +161,8 @@ export async function GET(request: NextRequest) {
     aiSheet.columns = [
       { header: 'Student Name', key: 'student', width: 20 },
       { header: 'USN', key: 'usn', width: 15 },
+      { header: 'Round', key: 'round', width: 10 },
+      { header: 'Assessment', key: 'assessment', width: 25 },
       { header: 'Question', key: 'question', width: 40 },
       { header: 'AI Marks', key: 'ai_marks', width: 12 },
       { header: 'Strengths', key: 'strengths', width: 35 },
@@ -133,6 +179,8 @@ export async function GET(request: NextRequest) {
     codeSheet.columns = [
       { header: 'Student Name', key: 'student', width: 20 },
       { header: 'USN', key: 'usn', width: 15 },
+      { header: 'Round', key: 'round', width: 10 },
+      { header: 'Assessment', key: 'assessment', width: 25 },
       { header: 'Question', key: 'question', width: 30 },
       { header: 'Language', key: 'language', width: 15 },
       { header: 'Code', key: 'code', width: 60 },
@@ -146,6 +194,9 @@ export async function GET(request: NextRequest) {
     // Populate Sheet 2, 3, 4
     students.forEach(s => {
       s.tests.forEach(test => {
+        const assessmentTitle = test.title || test.template?.name || (test.round === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment');
+        const testRound = test.round || 1;
+
         test.test_responses.forEach(res => {
           const q = res.question;
           const ai = res.ai_evaluation;
@@ -154,6 +205,8 @@ export async function GET(request: NextRequest) {
           qSheet.addRow({
             student: s.full_name || 'N/A',
             usn: s.usn || 'N/A',
+            round: testRound,
+            assessment: assessmentTitle,
             test_id: test.id,
             section: q?.section || 'N/A',
             type: q?.type || 'N/A',
@@ -169,6 +222,8 @@ export async function GET(request: NextRequest) {
             aiSheet.addRow({
               student: s.full_name || 'N/A',
               usn: s.usn || 'N/A',
+              round: testRound,
+              assessment: assessmentTitle,
               question: q?.question_text || 'N/A',
               ai_marks: ai.obtained_marks != null ? Number(ai.obtained_marks) : 'N/A',
               strengths: Array.isArray(ai.strengths) ? ai.strengths.join('; ') : '',
@@ -198,6 +253,8 @@ export async function GET(request: NextRequest) {
             codeSheet.addRow({
               student: s.full_name || 'N/A',
               usn: s.usn || 'N/A',
+              round: testRound,
+              assessment: assessmentTitle,
               question: q?.question_text || 'N/A',
               language: language,
               code: codeAnswer,
@@ -223,12 +280,13 @@ export async function GET(request: NextRequest) {
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
+    const exportFilename = targetRound ? `Student_Assessment_Results_Round_${targetRound}.xlsx` : 'Student_Assessment_Results.xlsx';
 
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename="Student_Assessment_Results.xlsx"',
+        'Content-Disposition': `attachment; filename="${exportFilename}"`,
       },
     });
   } catch (error: any) {

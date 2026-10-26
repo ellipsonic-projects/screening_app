@@ -15,6 +15,9 @@ interface Test {
   totalQuestions?: number;
   createdAt: string;
   results_published?: boolean;
+  round?: number;
+  title?: string;
+  templateId?: string;
 }
 
 export function StudentDashboard() {
@@ -109,7 +112,7 @@ export function StudentDashboard() {
             CURRENT ASSESSMENT
           </span>
           <h1 className="text-3xl sm:text-4xl md:text-[44px] font-black text-[#10234E] tracking-tight leading-tight">
-            Round 1 Assessment
+            {currentTest?.title || (currentTest?.round ? `Round ${currentTest.round} Assessment` : 'Round 1 Assessment')}
           </h1>
         </div>
 

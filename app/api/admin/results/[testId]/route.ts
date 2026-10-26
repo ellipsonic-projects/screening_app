@@ -30,6 +30,13 @@ export async function GET(
       where: { id: testId },
       include: {
         student: true,
+        template: {
+          select: {
+            id: true,
+            name: true,
+            description: true
+          }
+        },
         analytics: true,
         test_responses: {
           include: {
@@ -221,6 +228,10 @@ export async function GET(
       success: true,
       data: {
         id: test.id,
+        round: test.round || 1,
+        title: test.title || (test.round === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment'),
+        templateId: test.template_id,
+        templateName: test.template?.name || null,
         studentName: test.student?.full_name || 'Unknown Student',
         status: effectiveStatus,
         startTime: test.start_time,

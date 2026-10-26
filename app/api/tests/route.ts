@@ -30,11 +30,15 @@ export async function GET(request: NextRequest) {
     }
 
     const isAvailable = request.nextUrl.searchParams.get('available') === 'true';
+    const roundParam = request.nextUrl.searchParams.get('round');
+    const templateId = request.nextUrl.searchParams.get('templateId');
 
     const tests = await prisma.test.findMany({
       where: {
         student_id: student.id,
-        ...(isAvailable ? { status: 'not_started' } : {})
+        ...(isAvailable ? { status: 'not_started' } : {}),
+        ...(roundParam ? { round: parseInt(roundParam, 10) } : {}),
+        ...(templateId ? { template_id: templateId } : {})
       },
       select: {
         id: true,
@@ -42,12 +46,21 @@ export async function GET(request: NextRequest) {
         status: true,
         score: true,
         results_published: true,
+        round: true,
+        title: true,
+        template_id: true,
+        template: {
+          select: { id: true, name: true }
+        },
         created_at: true,
         _count: {
           select: { test_questions: true }
         }
       },
-      orderBy: { created_at: 'desc' }
+      orderBy: [
+        { round: 'desc' },
+        { created_at: 'desc' }
+      ]
     });
 
     return NextResponse.json({
@@ -57,6 +70,10 @@ export async function GET(request: NextRequest) {
         totalDuration: t.total_duration,
         status: t.status,
         score: t.results_published ? (t.score !== null ? Number(t.score) : null) : null,
+        round: t.round,
+        title: t.title || (t.round === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment'),
+        templateId: t.template_id,
+        templateName: t.template?.name || null,
         totalQuestions: t._count?.test_questions || 0,
         results_published: t.results_published,
         createdAt: t.created_at,
@@ -98,7 +115,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json();
-    const { studentId, questionIds, totalDuration, minAttemptPercentage, minAttemptEnabled } = data;
+    const { studentId, questionIds, totalDuration, minAttemptPercentage, minAttemptEnabled, round, title, templateId } = data;
 
     const config = await prisma.testTemplate.findFirst({
       where: { name: 'MASTER_TEST_CONFIG' }
@@ -110,6 +127,9 @@ export async function POST(request: NextRequest) {
       ? Boolean(minAttemptEnabled)
       : (config?.min_attempt_enabled ?? true);
 
+    const finalRound = round || 1;
+    const finalTitle = title || (finalRound === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment');
+
     const test = await prisma.$transaction(async (tx) => {
       const newTest = await tx.test.create({
         data: {
@@ -119,6 +139,9 @@ export async function POST(request: NextRequest) {
           violations_count: 0,
           min_attempt_percentage: finalMinPercentage,
           min_attempt_enabled: finalMinEnabled,
+          round: finalRound,
+          title: finalTitle,
+          template_id: templateId || config?.id || undefined,
         }
       });
       

@@ -109,16 +109,23 @@ model Test {
   results_published Boolean  @default(false)
   min_attempt_percentage Int?  @default(60)
   min_attempt_enabled    Boolean? @default(true)
+  template_id      String?   @db.Uuid
+  round            Int       @default(1)
+  title            String?   @db.VarChar(255)
   created_at       DateTime  @default(now()) @db.Timestamp(6)
   updated_at       DateTime  @default(now()) @db.Timestamp(6)
 
   student          Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  template         TestTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
   test_questions   TestQuestion[]
   test_responses   TestResponse[]
   violations       Violation[]
   analytics        TestAnalytics?
   ai_evaluations   AIEvaluation[]
 
+  @@index([template_id])
+  @@index([round])
+  @@index([student_id, round])
   @@map("tests")
 }
 
@@ -190,6 +197,7 @@ model TestTemplate {
   updated_at      DateTime  @default(now()) @db.Timestamp(6)
 
   creator         User      @relation(fields: [created_by], references: [id])
+  tests           Test[]
 
   @@map("test_templates")
 }

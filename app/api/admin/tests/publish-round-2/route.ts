@@ -49,10 +49,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { studentIds, questionIds } = body;
+    const studentIds = body.studentIds || body.selectedStudentIds;
+    const questionIds = body.questionIds || body.selectedQuestionIds;
 
-    // Support both totalDuration and durationMinutes
-    const rawDuration = body.totalDuration ?? body.durationMinutes;
+    // Support totalDuration, durationMinutes, and duration
+    const rawDuration = body.totalDuration ?? body.durationMinutes ?? body.duration;
     const totalDuration = typeof rawDuration === 'string' ? parseInt(rawDuration, 10) : Number(rawDuration);
 
     if (!rawDuration || isNaN(totalDuration) || totalDuration <= 0) {
@@ -121,10 +122,11 @@ export async function POST(request: NextRequest) {
 
     await prisma.$transaction(async (tx) => {
       for (const student of existingStudents) {
-        // Deduplication: Check if an unstarted test with the exact same questions already exists for this student
+        // Deduplication: Check if an unstarted Round 2 test with the exact same questions already exists for this student
         const existingPendingTests = await tx.test.findMany({
           where: {
             student_id: student.id,
+            round: 2,
             status: 'not_started'
           },
           include: {
@@ -158,6 +160,9 @@ export async function POST(request: NextRequest) {
             is_completed: false,
             min_attempt_percentage: minAttemptPercentage,
             min_attempt_enabled: minAttemptEnabled,
+            round: 2,
+            title: body.testTitle || 'Round 2 Technical Interview Assessment',
+            template_id: body.templateId || undefined
           }
         });
 

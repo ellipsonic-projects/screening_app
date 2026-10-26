@@ -60,14 +60,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'Profile not completed' }, { status: 400 });
     }
 
-    // Check if a test already exists for this student
+    const roundParam = request.nextUrl.searchParams.get('round');
+    const targetRound = roundParam ? parseInt(roundParam, 10) : 1;
+
+    // Check if a test already exists for this student in the requested round
     const existingTest = await prisma.test.findFirst({
-      where: { student_id: student.id },
+      where: {
+        student_id: student.id,
+        round: targetRound
+      },
       orderBy: { created_at: 'desc' }
     });
 
     if (existingTest) {
-      return NextResponse.json({ testId: existingTest.id });
+      return NextResponse.json({ testId: existingTest.id, round: existingTest.round });
     }
 
     // Otherwise, generate the master test
@@ -117,6 +123,9 @@ export async function GET(request: NextRequest) {
           status: 'not_started',
           min_attempt_percentage: minAttemptPercentage,
           min_attempt_enabled: minAttemptEnabled,
+          round: targetRound,
+          title: targetRound === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment',
+          template_id: config?.id || undefined,
         }
       });
 
@@ -132,7 +141,7 @@ export async function GET(request: NextRequest) {
       return test;
     });
 
-    return NextResponse.json({ testId: newTest.id });
+    return NextResponse.json({ testId: newTest.id, round: newTest.round });
   } catch (error: any) {
     console.error('[Generate Active Test Error]', error);
     return NextResponse.json({ message: 'Failed to generate test' }, { status: 500 });

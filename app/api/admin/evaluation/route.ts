@@ -17,13 +17,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
+    const roundParam = request.nextUrl.searchParams.get('round');
+    const templateId = request.nextUrl.searchParams.get('templateId') || request.nextUrl.searchParams.get('assessmentId');
+    const targetRound = roundParam ? parseInt(roundParam, 10) : undefined;
+
+    const whereClause: any = {};
+    if (targetRound !== undefined && !isNaN(targetRound)) {
+      whereClause.round = targetRound;
+    }
+    if (templateId) {
+      whereClause.template_id = templateId;
+    }
+
     const tests = await prisma.test.findMany({
+      where: whereClause,
       include: {
         student: {
           include: {
             user: {
               select: { email: true }
             }
+          }
+        },
+        template: {
+          select: {
+            id: true,
+            name: true
           }
         },
         test_responses: {
@@ -33,7 +52,10 @@ export async function GET(request: NextRequest) {
           }
         }
       },
-      orderBy: { created_at: 'desc' }
+      orderBy: [
+        { round: 'asc' },
+        { created_at: 'desc' }
+      ]
     });
 
     const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
@@ -62,6 +84,10 @@ export async function GET(request: NextRequest) {
 
       return {
         id: test.id,
+        round: test.round || 1,
+        title: test.title || (test.round === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment'),
+        templateId: test.template_id,
+        templateName: test.template?.name || null,
         fullName: test.student?.full_name || 'Unknown',
         usn: test.student?.usn || '',
         branch: test.student?.branch_name || '',

@@ -38,6 +38,9 @@ function sortAndShuffleQuestions(questions: any[]) {
 const AssignTestSchema = z.object({
   questionIds: z.array(z.string()).min(1, 'Select at least one question'),
   totalDuration: z.number().optional(), // custom duration in minutes
+  round: z.number().int().positive().optional(),
+  title: z.string().optional(),
+  templateId: z.string().uuid().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -65,7 +68,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { questionIds, totalDuration } = validation.data;
+    const { questionIds, totalDuration, round, title, templateId } = validation.data;
 
     // Fetch the questions to sum up the duration and shuffle them
     const questions = await prisma.question.findMany({
@@ -94,6 +97,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'No students found' }, { status: 404 });
     }
 
+    const assignedRound = round || 1;
+    const assignedTitle = title || (assignedRound === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment');
+
     // Create a Test for each student, and then map TestQuestions
     let createdTestsCount = 0;
 
@@ -107,6 +113,9 @@ export async function POST(request: NextRequest) {
             is_completed: false,
             min_attempt_percentage: minAttemptPercentage,
             min_attempt_enabled: minAttemptEnabled,
+            round: assignedRound,
+            title: assignedTitle,
+            template_id: templateId || config?.id || undefined,
           }
         });
 
