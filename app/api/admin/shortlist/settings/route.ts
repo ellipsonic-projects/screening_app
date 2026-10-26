@@ -118,6 +118,13 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    const isValidUuid = (id?: string) => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+    let adminUserId: string | null = null;
+    if (isValidUuid(decoded.userId)) {
+      const u = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true } });
+      if (u) adminUserId = u.id;
+    }
+
     let savedSetting: any;
     if (existing) {
       savedSetting = await prisma.shortlistSetting.update({
@@ -130,7 +137,7 @@ export async function POST(request: NextRequest) {
           overall_weight: validatedConfig.overallWeight,
           section_weight: validatedConfig.sectionWeight,
           category_weights: validatedConfig.categoryWeights,
-          created_by: decoded.userId,
+          created_by: adminUserId,
           updated_at: new Date()
         }
       });
@@ -146,7 +153,7 @@ export async function POST(request: NextRequest) {
           overall_weight: validatedConfig.overallWeight,
           section_weight: validatedConfig.sectionWeight,
           category_weights: validatedConfig.categoryWeights,
-          created_by: decoded.userId
+          created_by: adminUserId
         }
       });
     }

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import axios from 'axios';
 import { useAuth } from '@/context/auth-context';
-import { Users, ClipboardList, Target, BookOpen, Settings, ArrowRight, User, LogOut } from 'lucide-react';
+import { Users, ClipboardList, Target, BookOpen, Settings, ArrowRight, User, LogOut, Trophy } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
 
 export function AdminDashboard() {
@@ -241,7 +241,7 @@ export function AdminDashboard() {
             MANAGEMENT WORKSPACES
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-5 sm:gap-6">
             {/* Workspace 1: Question Bank */}
             <Link href="/admin/questions" className="block group">
               <div className="bg-white rounded-[20px] border border-[#DCE5F0] p-6 sm:p-7 flex flex-col justify-between min-h-[250px] sm:h-[255px] shadow-[0_2px_8px_rgba(16,35,78,0.02)] hover:border-[#BFDBFE] hover:shadow-md transition-all duration-200 cursor-pointer text-left">
@@ -287,7 +287,7 @@ export function AdminDashboard() {
             </Link>
 
             {/* Workspace 3: Student Directory */}
-            <Link href="/admin/students" className="block group sm:col-span-2 lg:col-span-1">
+            <Link href="/admin/students" className="block group">
               <div className="bg-white rounded-[20px] border border-[#DCE5F0] p-6 sm:p-7 flex flex-col justify-between min-h-[250px] sm:h-[255px] shadow-[0_2px_8px_rgba(16,35,78,0.02)] hover:border-[#BFDBFE] hover:shadow-md transition-all duration-200 cursor-pointer text-left">
                 <div className="flex items-center justify-between">
                   <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[#E8FAF6] text-[#0D9488] flex items-center justify-center">
@@ -303,6 +303,28 @@ export function AdminDashboard() {
                   </h3>
                   <p className="text-[13px] sm:text-sm text-[#607797] leading-relaxed mt-2">
                     Monitor candidate registrations, live test attempts, scorecard logs, and violations.
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            {/* Workspace 4: Candidate Shortlisting */}
+            <Link href="/admin/shortlist" className="block group">
+              <div className="bg-white rounded-[20px] border border-[#DCE5F0] p-6 sm:p-7 flex flex-col justify-between min-h-[250px] sm:h-[255px] shadow-[0_2px_8px_rgba(16,35,78,0.02)] hover:border-[#BFDBFE] hover:shadow-md transition-all duration-200 cursor-pointer text-left">
+                <div className="flex items-center justify-between">
+                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center">
+                    <Trophy className="w-6 h-6" />
+                  </div>
+                  <div className="w-9 h-9 rounded-full bg-[#F3F7FD] flex items-center justify-center text-[#607797] group-hover:bg-[#EEF5FF] group-hover:text-[#1760FF] transition-all">
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+                <div className="mt-6">
+                  <h3 className="text-xl font-bold text-[#10234E]">
+                    Candidate Shortlisting
+                  </h3>
+                  <p className="text-[13px] sm:text-sm text-[#607797] leading-relaxed mt-2">
+                    Dynamic ranking engine, weight allocation, cutoffs, and official shortlist publication.
                   </p>
                 </div>
               </div>

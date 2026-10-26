@@ -17,7 +17,8 @@ import {
   ChevronRight, 
   Loader2, 
   Users,
-  X
+  X,
+  Trophy
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'react-hot-toast';
@@ -573,8 +574,17 @@ export function StudentsViewer() {
             </span>
           </div>
 
-          {/* Right: Dashboard Navigation Button */}
-          <div>
+          {/* Right: Actions and Dashboard Navigation */}
+          <div className="flex items-center gap-2">
+            <Link href="/admin/shortlist">
+              <Button 
+                variant="outline" 
+                className="text-xs bg-[#EEF5FF] hover:bg-[#DBEAFE] text-[#1760FF] font-bold px-3.5 py-1.5 rounded-lg transition flex items-center border border-[#BFDBFE] shadow-2xs cursor-pointer"
+              >
+                <Trophy className="w-3.5 h-3.5 mr-1.5 text-[#1760FF]" /> Shortlist & Rank
+              </Button>
+            </Link>
+
             <Link href="/admin/dashboard">
               <Button 
                 variant="outline" 
