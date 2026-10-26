@@ -146,7 +146,7 @@ export function AIEvaluationCard({
   const feedbackSummary = evaluation.feedback || (evaluation.status === 'FAILED' ? 'Evaluation failed.' : 'No feedback recorded.');
   const criteriaScores = evaluation.criteriaScores || evaluation.rawResponse?.criteriaScores || evaluation.rawResponse?.criteria || [];
   const deductionReasons = evaluation.deductionReasons || evaluation.rawResponse?.deductionReasons || evaluation.mistakes || [];
-
+  const resultInfo = getResultInfo(evaluation);
 
   return (
     <div className="border border-slate-200/80 rounded-2xl p-3.5 sm:p-4 bg-white shadow-2xs hover:border-slate-300 transition-colors">

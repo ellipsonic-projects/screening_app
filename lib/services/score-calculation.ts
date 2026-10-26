@@ -40,9 +40,15 @@ export async function recalculateTestScore(testId: string): Promise<number> {
 
   // Calculate maximum possible points for the test (Eligibility is unscored)
   let totalPossiblePoints = 0;
+  const sectionTotals: Record<string, number> = {};
+
   for (const tq of test.test_questions) {
     if (isEligibilityCategory(tq.question.section)) continue;
     totalPossiblePoints += tq.question.points || 0;
+    const section = canonicalizeCategory(tq.question.section) || 'uncategorized';
+    if (!(section in sectionTotals)) {
+      sectionTotals[section] = 0;
+    }
   }
 
   // Get all responses
@@ -58,10 +64,10 @@ export async function recalculateTestScore(testId: string): Promise<number> {
 
   let totalEarnedPoints = 0;
   let overallAiMarks = 0;
-  const sectionTotals: Record<string, number> = {};
 
   const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
   let hasFailedEvaluation = false;
+  let hasPendingEvaluation = false;
 
   for (const response of responses) {
     if (isEligibilityCategory(response.question?.section)) continue;
@@ -70,8 +76,12 @@ export async function recalculateTestScore(testId: string): Promise<number> {
     const aiEval = aiEvaluations.find(e => e.test_response_id === response.id);
     const evalStatus = aiEval?.evaluation_status || response.evaluation_status;
 
-    if (isSubjective && evalStatus === 'FAILED') {
-      hasFailedEvaluation = true;
+    if (isSubjective) {
+      if (evalStatus === 'FAILED') {
+        hasFailedEvaluation = true;
+      } else if (evalStatus === 'PENDING' || evalStatus === 'PROCESSING' || evalStatus === 'RETRYING' || !evalStatus) {
+        hasPendingEvaluation = true;
+      }
     }
 
     let earned = 0;
@@ -130,10 +140,40 @@ export async function recalculateTestScore(testId: string): Promise<number> {
     return 0;
   }
 
+  if (hasPendingEvaluation) {
+    // If any reviewable evaluation is still pending or processing, candidate score must NOT be finalized as an interim objective-only score
+    await prisma.test.update({
+      where: { id: testId },
+      data: {
+        score: null,
+        status: test.status === 'ineligible_attempt' ? 'ineligible_attempt' : 'evaluating'
+      }
+    });
+
+    await prisma.testAnalytics.upsert({
+      where: { test_id: testId },
+      update: {
+        total_score: null,
+        overall_ai_marks: overallAiMarks,
+        overall_percentage: null,
+        section_totals: sectionTotals
+      },
+      create: {
+        test_id: testId,
+        total_score: null,
+        overall_ai_marks: overallAiMarks,
+        overall_percentage: null,
+        section_totals: sectionTotals
+      }
+    });
+
+    return 0;
+  }
+
   const updateData: any = {
     score: totalEarnedPoints
   };
-  if (test.status === 'evaluation_failed') {
+  if (test.status === 'evaluation_failed' || test.status === 'evaluating') {
     updateData.status = 'evaluated';
   }
 

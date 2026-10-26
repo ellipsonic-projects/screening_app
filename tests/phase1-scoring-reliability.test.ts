@@ -493,7 +493,7 @@ async function runPhase1Tests() {
 
   // Score exceeding maximum
   const exceedCheck = validateScoreOverride(25, maxPoints);
-  assert(!exceedCheck.valid && exceedCheck.error?.includes('cannot exceed maximum marks'), `Score of 25 exceeding max (${maxPoints}) is rejected`);
+  assert(!exceedCheck.valid && Boolean(exceedCheck.error?.includes('cannot exceed maximum marks')), `Score of 25 exceeding max (${maxPoints}) is rejected`);
 
   // Valid score
   const validCheck = validateScoreOverride(18.5, maxPoints);

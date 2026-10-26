@@ -6,7 +6,7 @@ import axios from 'axios';
 interface User {
   id: string;
   email: string;
-  role: 'student' | 'admin';
+  role: 'student' | 'admin' | 'super_admin';
   createdAt: string;
 }
 

@@ -7,7 +7,7 @@ import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 
-type UserRole = 'student' | 'admin' | 'super_admin';
+export type UserRole = 'student' | 'admin' | 'super_admin' | 'recruiter';
 
 export interface TokenPayload {
   userId: string;

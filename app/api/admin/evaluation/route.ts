@@ -43,12 +43,22 @@ export async function GET(request: NextRequest) {
         r => REVIEWABLE_TYPES.includes(r.question?.type || '') && !isEligibilityCategory(r.question?.section) && r.evaluation_status === 'FAILED'
       );
 
+      const hasPending = test.test_responses?.some(
+        r => REVIEWABLE_TYPES.includes(r.question?.type || '') && 
+             !isEligibilityCategory(r.question?.section) && 
+             (r.evaluation_status === 'PENDING' || r.evaluation_status === 'PROCESSING' || r.evaluation_status === 'RETRYING')
+      );
+
       let effectiveStatus = test.status;
       if (test.status === 'ineligible_attempt') {
         effectiveStatus = 'ineligible_attempt';
       } else if (hasFailed) {
         effectiveStatus = 'evaluation_failed';
+      } else if (hasPending || test.status === 'evaluating') {
+        effectiveStatus = 'evaluating';
       }
+
+      const isUnfinalized = effectiveStatus === 'evaluation_failed' || effectiveStatus === 'ineligible_attempt' || effectiveStatus === 'evaluating';
 
       return {
         id: test.id,
@@ -57,7 +67,7 @@ export async function GET(request: NextRequest) {
         branch: test.student?.branch_name || '',
         email: test.student?.user?.email || '',
         status: effectiveStatus,
-        score: (effectiveStatus === 'evaluation_failed' || effectiveStatus === 'ineligible_attempt') ? null : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
+        score: isUnfinalized ? null : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
         violations: test.violations_count || 0,
         createdAt: test.created_at,
         submittedAt: test.end_time,

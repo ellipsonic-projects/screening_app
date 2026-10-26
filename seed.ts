@@ -15,17 +15,7 @@ async function main() {
   await prisma.student.deleteMany({});
   await prisma.admin.deleteMany({});
   await prisma.user.deleteMany({});
-  await prisma.branch.deleteMany({});
   await prisma.testTemplate.deleteMany({});
-
-  console.log('Seeding branches...');
-  const branches = ['CSE', 'ECE', 'MECH', 'CIVIL', 'EEE', 'ISE', 'AIML'];
-  
-  for (const name of branches) {
-    await prisma.branch.create({
-      data: { name },
-    });
-  }
 
   console.log('Seeding Super Admin...');
   const passwordHash = await bcryptjs.hash('superadminpassword', 10);

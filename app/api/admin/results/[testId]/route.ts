@@ -56,6 +56,8 @@ export async function GET(
 
     const isIneligible = test.status === 'ineligible_attempt';
 
+    const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
+
     const finalSectionScores = SECTIONS.map(sec => {
       const isSecEligibility = isEligibilityCategory(sec.id);
       const questionsInSection = test.test_questions.filter((tq: any) => 
@@ -64,9 +66,15 @@ export async function GET(
       const responsesInSection = test.test_responses.filter(r => 
         canonicalizeCategory(r.question.section) === sec.id
       );
+      const hasPendingInSec = responsesInSection.some(r => {
+        const ai = r.ai_evaluation as any;
+        const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
+        const evalStatus = ai?.evaluation_status || r.evaluation_status;
+        return isReviewable && (evalStatus === 'PENDING' || evalStatus === 'PROCESSING' || evalStatus === 'RETRYING');
+      });
       
       const totalMarks = isSecEligibility ? null : questionsInSection.reduce((sum: number, tq: any) => sum + (tq.question.points || 0), 0);
-      const marksObtained = (isSecEligibility || isIneligible) ? null : responsesInSection.reduce((sum: number, r: any) => {
+      const marksObtained = (isSecEligibility || isIneligible || hasPendingInSec) ? null : responsesInSection.reduce((sum: number, r: any) => {
         const ai = r.ai_evaluation as any;
         const earned = ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined 
           ? Number(ai.obtained_marks) 
@@ -78,7 +86,7 @@ export async function GET(
         sectionName: sec.label,
         marksObtained,
         totalMarks,
-        isCompleted: !isIneligible && (test.status === 'submitted' || test.status === 'auto_submitted')
+        isCompleted: !isIneligible && !hasPendingInSec && (test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'evaluated')
       };
     });
 
@@ -101,8 +109,6 @@ export async function GET(
       }
     });
 
-    const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
-
     const hasAnyFailedEvaluation = test.test_responses.some(r => {
       const ai = r.ai_evaluation as any;
       const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
@@ -112,15 +118,24 @@ export async function GET(
       );
     });
 
+    const hasAnyPendingEvaluation = test.test_responses.some(r => {
+      const ai = r.ai_evaluation as any;
+      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
+      const evalStatus = ai?.evaluation_status || r.evaluation_status;
+      return isReviewable && (evalStatus === 'PENDING' || evalStatus === 'PROCESSING' || evalStatus === 'RETRYING');
+    });
+
     let effectiveStatus = test.status;
     if (isIneligible) {
       effectiveStatus = 'ineligible_attempt';
     } else if (test.status === 'evaluation_failed' || hasAnyFailedEvaluation) {
       effectiveStatus = 'evaluation_failed';
+    } else if (hasAnyPendingEvaluation || test.status === 'evaluating') {
+      effectiveStatus = 'evaluating';
     }
 
     const scores = {
-      overallScore: (effectiveStatus === 'evaluation_failed' || isIneligible)
+      overallScore: (effectiveStatus === 'evaluation_failed' || isIneligible || effectiveStatus === 'evaluating')
         ? null
         : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
       overallTotalMarks,

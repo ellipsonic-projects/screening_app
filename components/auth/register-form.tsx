@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { RegisterSchema, RegisterInput } from '@/lib/validators';
 import { useAuth } from '@/context/auth-context';
 import Link from 'next/link';
@@ -23,7 +24,7 @@ export function RegisterForm() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<any>({
+  } = useForm<z.input<typeof RegisterSchema>, any, RegisterInput>({
     resolver: zodResolver(RegisterSchema),
   });
 
@@ -77,8 +78,8 @@ export function RegisterForm() {
               className="w-full h-[46px] pl-10 pr-3.5 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
             />
           </div>
-          {errors.email && (
-            <p className="text-rose-500 text-xs font-medium pl-1">{errors.email.message}</p>
+          {errors.email?.message && (
+            <p className="text-rose-500 text-xs font-medium pl-1">{String(errors.email.message)}</p>
           )}
         </div>
 
@@ -109,8 +110,8 @@ export function RegisterForm() {
               )}
             </button>
           </div>
-          {errors.password && (
-            <p className="text-rose-500 text-xs font-medium pl-1">{errors.password.message}</p>
+          {errors.password?.message && (
+            <p className="text-rose-500 text-xs font-medium pl-1">{String(errors.password.message)}</p>
           )}
         </div>
 
@@ -141,8 +142,8 @@ export function RegisterForm() {
               )}
             </button>
           </div>
-          {errors.confirmPassword && (
-            <p className="text-rose-500 text-xs font-medium pl-1">{errors.confirmPassword.message}</p>
+          {errors.confirmPassword?.message && (
+            <p className="text-rose-500 text-xs font-medium pl-1">{String(errors.confirmPassword.message)}</p>
           )}
         </div>
 

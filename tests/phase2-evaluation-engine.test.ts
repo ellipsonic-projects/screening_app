@@ -289,7 +289,7 @@ async function runPhase2Tests() {
     score: 20.0
   });
   const parsedUnknown = parseLLMResponse(requestWithMeta, unknownCriteriaOutput, 'test-model');
-  assert(!parsedUnknown.success && parsedUnknown.error?.includes('Unknown criterion'), 'Rejects unknown criteria in response');
+  assert(!parsedUnknown.success && Boolean(parsedUnknown.error?.includes('Unknown criterion')), 'Rejects unknown criteria in response');
 
   // 9.2 Duplicate criterion
   const duplicateCriteriaOutput = JSON.stringify({
@@ -301,7 +301,7 @@ async function runPhase2Tests() {
     score: 20.0
   });
   const parsedDuplicate = parseLLMResponse(requestWithMeta, duplicateCriteriaOutput, 'test-model');
-  assert(!parsedDuplicate.success && parsedDuplicate.error?.includes('Duplicate criterion'), 'Rejects duplicate criteria in response');
+  assert(!parsedDuplicate.success && Boolean(parsedDuplicate.error?.includes('Duplicate criterion')), 'Rejects duplicate criteria in response');
 
   // 9.3 Score exceeding criterion max
   const scoreExceedingOutput = JSON.stringify({
@@ -313,7 +313,7 @@ async function runPhase2Tests() {
     score: 23.0
   });
   const parsedExceed = parseLLMResponse(requestWithMeta, scoreExceedingOutput, 'test-model');
-  assert(!parsedExceed.success && parsedExceed.error?.includes('exceeds maximum allowed'), 'Rejects criterion score exceeding maxScore');
+  assert(!parsedExceed.success && Boolean(parsedExceed.error?.includes('exceeds maximum allowed')), 'Rejects criterion score exceeding maxScore');
 
   // ========================================================
   // TEST 10: Malformed AI responses and provider failures preserve failure semantics
