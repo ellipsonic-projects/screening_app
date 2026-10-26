@@ -28,6 +28,8 @@ model User {
   admin         Admin?
   questions     Question[]
   templates     TestTemplate[]
+  shortlist_settings   ShortlistSetting[]
+  published_shortlists PublishedShortlist[]
 
   @@map("users")
 }
@@ -49,6 +51,7 @@ model Student {
   user                  User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
   tests                 Test[]
   ai_evaluations        AIEvaluation[]
+  shortlist_candidates  ShortlistCandidate[]
 
   @@map("students")
 }
@@ -122,6 +125,7 @@ model Test {
   violations       Violation[]
   analytics        TestAnalytics?
   ai_evaluations   AIEvaluation[]
+  shortlist_candidates ShortlistCandidate[]
 
   @@index([template_id])
   @@index([round])
@@ -198,6 +202,8 @@ model TestTemplate {
 
   creator         User      @relation(fields: [created_by], references: [id])
   tests           Test[]
+  shortlist_settings   ShortlistSetting[]
+  published_shortlists PublishedShortlist[]
 
   @@map("test_templates")
 }
@@ -251,6 +257,71 @@ model AIEvaluation {
 
   @@map("ai_evaluations")
  
+}
+
+model ShortlistSetting {
+  id                         String        @id @default(uuid()) @db.Uuid
+  template_id                String?       @db.Uuid
+  round                      Int           @default(1)
+  shortlist_size             Int           @default(10)
+  overall_cutoff_enabled     Boolean       @default(false)
+  overall_cutoff_percentage  Decimal?      @default(60.0) @db.Decimal(5, 2)
+  section_cutoffs            Json?         // { [category]: min_percentage }
+  overall_weight             Decimal       @default(50.0) @db.Decimal(5, 2)
+  section_weight             Decimal       @default(50.0) @db.Decimal(5, 2)
+  category_weights           Json?         // { [category]: relative_weight }
+  tie_break_rules            Json?
+  created_by                 String?       @db.Uuid
+  created_at                 DateTime      @default(now()) @db.Timestamp(6)
+  updated_at                 DateTime      @default(now()) @db.Timestamp(6)
+
+  template                   TestTemplate? @relation(fields: [template_id], references: [id], onDelete: Cascade)
+  creator                    User?         @relation(fields: [created_by], references: [id])
+
+  @@index([template_id, round])
+  @@map("shortlist_settings")
+}
+
+model PublishedShortlist {
+  id                         String               @id @default(uuid()) @db.Uuid
+  template_id                String?              @db.Uuid
+  round                      Int                  @default(1)
+  published_by               String               @db.Uuid
+  shortlist_size             Int
+  config_snapshot            Json
+  published_at               DateTime             @default(now()) @db.Timestamp(6)
+  created_at                 DateTime             @default(now()) @db.Timestamp(6)
+  updated_at                 DateTime             @default(now()) @db.Timestamp(6)
+
+  template                   TestTemplate?        @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  publisher                  User                 @relation(fields: [published_by], references: [id])
+  candidates                 ShortlistCandidate[]
+
+  @@index([template_id, round])
+  @@map("published_shortlists")
+}
+
+model ShortlistCandidate {
+  id                   String             @id @default(uuid()) @db.Uuid
+  shortlist_id         String             @db.Uuid
+  student_id           String             @db.Uuid
+  test_id              String             @db.Uuid
+  rank                 Int?
+  ranking_score        Decimal?           @db.Decimal(6, 3)
+  overall_percentage   Decimal?           @db.Decimal(5, 2)
+  section_percentages  Json?              // { [category]: percentage }
+  status               String             @db.VarChar(50) // 'shortlisted', 'not_shortlisted', 'disqualified', 'pending_review'
+  exclusion_reasons    Json?              // string[]
+  created_at           DateTime           @default(now()) @db.Timestamp(6)
+
+  shortlist            PublishedShortlist @relation(fields: [shortlist_id], references: [id], onDelete: Cascade)
+  student              Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  test                 Test               @relation(fields: [test_id], references: [id], onDelete: Cascade)
+
+  @@index([shortlist_id])
+  @@index([student_id])
+  @@index([test_id])
+  @@map("shortlist_candidates")
 }
 
 
