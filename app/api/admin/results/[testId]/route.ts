@@ -5,7 +5,8 @@ import {
   CATEGORIES, 
   CATEGORY_ORDER, 
   canonicalizeCategory, 
-  isEligibilityCategory 
+  isEligibilityCategory,
+  isPersonalityCategory
 } from '@/lib/categories';
 
 export async function GET(
@@ -67,6 +68,7 @@ export async function GET(
 
     const finalSectionScores = SECTIONS.map(sec => {
       const isSecEligibility = isEligibilityCategory(sec.id);
+      const isSecPersonality = isPersonalityCategory(sec.id);
       const questionsInSection = test.test_questions.filter((tq: any) => 
         canonicalizeCategory(tq.question.section) === sec.id
       );
@@ -75,13 +77,13 @@ export async function GET(
       );
       const hasPendingInSec = responsesInSection.some(r => {
         const ai = r.ai_evaluation as any;
-        const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
+        const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section) && !isPersonalityCategory(r.question.section);
         const evalStatus = ai?.evaluation_status || r.evaluation_status;
         return isReviewable && (evalStatus === 'PENDING' || evalStatus === 'PROCESSING' || evalStatus === 'RETRYING');
       });
       
-      const totalMarks = isSecEligibility ? null : questionsInSection.reduce((sum: number, tq: any) => sum + (tq.question.points || 0), 0);
-      const marksObtained = (isSecEligibility || isIneligible || hasPendingInSec) ? null : responsesInSection.reduce((sum: number, r: any) => {
+      const totalMarks = (isSecEligibility || isSecPersonality) ? null : questionsInSection.reduce((sum: number, tq: any) => sum + (tq.question.points || 0), 0);
+      const marksObtained = (isSecEligibility || isSecPersonality || isIneligible || hasPendingInSec) ? null : responsesInSection.reduce((sum: number, r: any) => {
         const ai = r.ai_evaluation as any;
         const earned = ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined 
           ? Number(ai.obtained_marks) 
@@ -93,7 +95,7 @@ export async function GET(
         sectionName: sec.label,
         marksObtained,
         totalMarks,
-        isCompleted: !isIneligible && !hasPendingInSec && (test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'evaluated')
+        isCompleted: !isSecPersonality && !isIneligible && !hasPendingInSec && (test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'evaluated')
       };
     });
 
@@ -101,13 +103,13 @@ export async function GET(
     let overallMarksObtained = 0;
     
     test.test_questions.forEach((tq: any) => {
-      if (!isEligibilityCategory(tq.question.section)) {
+      if (!isEligibilityCategory(tq.question.section) && !isPersonalityCategory(tq.question.section)) {
         overallTotalMarks += (tq.question.points || 0);
       }
     });
 
     test.test_responses.forEach((r: any) => {
-      if (!isEligibilityCategory(r.question.section)) {
+      if (!isEligibilityCategory(r.question.section) && !isPersonalityCategory(r.question.section)) {
         const ai = r.ai_evaluation as any;
         const earned = ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined 
           ? Number(ai.obtained_marks) 
@@ -118,7 +120,7 @@ export async function GET(
 
     const hasAnyFailedEvaluation = test.test_responses.some(r => {
       const ai = r.ai_evaluation as any;
-      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
+      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section) && !isPersonalityCategory(r.question.section);
       return isReviewable && (
         r.evaluation_status === 'FAILED' ||
         ai?.evaluation_status === 'FAILED'
@@ -127,10 +129,14 @@ export async function GET(
 
     const hasAnyPendingEvaluation = test.test_responses.some(r => {
       const ai = r.ai_evaluation as any;
-      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section);
+      const isReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isEligibilityCategory(r.question.section) && !isPersonalityCategory(r.question.section);
       const evalStatus = ai?.evaluation_status || r.evaluation_status;
       return isReviewable && (evalStatus === 'PENDING' || evalStatus === 'PROCESSING' || evalStatus === 'RETRYING');
     });
+
+    const hasAnyScoredQuestions = test.test_questions.some(
+      (tq: any) => !isEligibilityCategory(tq.question.section) && !isPersonalityCategory(tq.question.section)
+    );
 
     let effectiveStatus = test.status;
     if (isIneligible) {
@@ -139,10 +145,12 @@ export async function GET(
       effectiveStatus = 'evaluation_failed';
     } else if (hasAnyPendingEvaluation || test.status === 'evaluating') {
       effectiveStatus = 'evaluating';
+    } else if (!hasAnyScoredQuestions && test.status === 'evaluated') {
+      effectiveStatus = 'submitted';
     }
 
     const scores = {
-      overallScore: (effectiveStatus === 'evaluation_failed' || isIneligible || effectiveStatus === 'evaluating')
+      overallScore: (!hasAnyScoredQuestions || effectiveStatus === 'evaluation_failed' || isIneligible || effectiveStatus === 'evaluating')
         ? null
         : (test.score !== null && test.score !== undefined ? Number(test.score) : null),
       overallTotalMarks,
@@ -151,9 +159,10 @@ export async function GET(
     // Group AI Evaluations by Section
     const aiEvaluationsBySection = SECTIONS.map(sec => {
       const isSecEligibility = isEligibilityCategory(sec.id);
+      const isSecPersonality = isPersonalityCategory(sec.id);
       const responsesInSection = test.test_responses.filter(r => 
         canonicalizeCategory(r.question.section) === sec.id && 
-        (REVIEWABLE_TYPES.includes(r.question.type) || isEligibilityCategory(r.question.section))
+        (REVIEWABLE_TYPES.includes(r.question.type) || isEligibilityCategory(r.question.section) || isPersonalityCategory(r.question.section))
       );
       
       return {
@@ -161,13 +170,16 @@ export async function GET(
         evaluations: responsesInSection.map(r => {
           const ai = r.ai_evaluation as any; // Cast safely since we included it
           const isEligibility = isEligibilityCategory(r.question.section);
-          const isAiReviewable = REVIEWABLE_TYPES.includes(r.question.type);
+          const isPersonality = isPersonalityCategory(r.question.section);
+          const isAiReviewable = REVIEWABLE_TYPES.includes(r.question.type) && !isPersonality;
 
           let status: string;
           if (isIneligible) {
             status = 'INELIGIBLE_ATTEMPT';
           } else if (isEligibility) {
             status = 'ELIGIBILITY_ONLY';
+          } else if (isPersonality) {
+            status = 'PENDING';
           } else if (isAiReviewable) {
             if (ai?.evaluation_status) {
               status = ai.evaluation_status;
@@ -186,7 +198,7 @@ export async function GET(
           const isFailed = status === 'FAILED';
 
           let pointsEarned: number | null = null;
-          if (isIneligible || isEligibility || isFailed) {
+          if (isIneligible || isEligibility || isPersonality || isFailed) {
             pointsEarned = null;
           } else if (isAiReviewable) {
             if (ai && ai.obtained_marks !== null && ai.obtained_marks !== undefined && isCompleted) {
@@ -205,19 +217,19 @@ export async function GET(
             section: r.question.section,
             studentAnswer: r.student_answer,
             pointsEarned,
-            maxPoints: isEligibility ? null : (ai?.maximum_marks ?? r.question.points ?? 0),
-            isCorrect: (isIneligible || isFailed) ? false : r.is_correct,
+            maxPoints: (isEligibility || isPersonality) ? null : (ai?.maximum_marks ?? r.question.points ?? 0),
+            isCorrect: (isIneligible || isFailed || isPersonality) ? null : r.is_correct,
             status,
-            feedback: ai?.feedback,
-            strengths: ai?.strengths,
-            improvements: ai?.improvements,
-            criteriaScores: (ai?.raw_response as any)?.criteriaScores || (r.ai_evaluation_json as any)?.criteriaScores || [],
-            deductionReasons: (ai?.raw_response as any)?.deductionReasons || (r.ai_evaluation_json as any)?.deductionReasons || [],
-            mistakes: (ai?.raw_response as any)?.mistakes || [],
-            suggestions: (ai?.raw_response as any)?.suggestions || [],
-            modelUsed: ai?.model_used,
-            rawResponse: ai?.raw_response || r.ai_evaluation_json || null,
-            evaluatedAt: ai?.evaluated_at || (r.ai_evaluation_json as any)?.evaluatedAt || null
+            feedback: isPersonality ? 'Personality evaluation pending criteria approval.' : ai?.feedback,
+            strengths: isPersonality ? [] : ai?.strengths,
+            improvements: isPersonality ? [] : ai?.improvements,
+            criteriaScores: isPersonality ? [] : ((ai?.raw_response as any)?.criteriaScores || (r.ai_evaluation_json as any)?.criteriaScores || []),
+            deductionReasons: isPersonality ? [] : ((ai?.raw_response as any)?.deductionReasons || (r.ai_evaluation_json as any)?.deductionReasons || []),
+            mistakes: isPersonality ? [] : ((ai?.raw_response as any)?.mistakes || []),
+            suggestions: isPersonality ? [] : ((ai?.raw_response as any)?.suggestions || []),
+            modelUsed: isPersonality ? 'none' : ai?.model_used,
+            rawResponse: isPersonality ? null : (ai?.raw_response || r.ai_evaluation_json || null),
+            evaluatedAt: isPersonality ? null : (ai?.evaluated_at || (r.ai_evaluation_json as any)?.evaluatedAt || null)
           };
 
         })

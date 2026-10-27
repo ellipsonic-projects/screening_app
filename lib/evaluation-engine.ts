@@ -1,6 +1,6 @@
 import { EvaluationRequest, EvaluationResponse, CriterionEvaluation } from '@/types';
 import { getEvaluationPrompt } from './prompts/evaluation-templates';
-import { canonicalizeCategory } from '@/lib/categories';
+import { canonicalizeCategory, isPersonalityCategory } from '@/lib/categories';
 import { getCriteriaForQuestion, allocateCriterionMarks } from '@/lib/evaluation/criteria-registry';
 
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
@@ -16,6 +16,30 @@ const MAX_EVALUATION_TOKENS = 1500;
  * Fully decoupled from persistence (Prisma) and queue/execution layers.
  */
 export async function evaluateAnswer(request: EvaluationRequest): Promise<EvaluationResponse> {
+  // Defense-in-depth: Never evaluate Personality questions
+  if (request.section && isPersonalityCategory(request.section)) {
+    return {
+      questionId: request.questionId,
+      score: 0,
+      maximumMarks: request.maxMarks,
+      feedback: 'Personality evaluation is completely disabled pending explicit evaluation criteria approval.',
+      strengths: [],
+      improvements: [],
+      deductionReasons: [],
+      criteriaScores: [],
+      evaluationStatus: 'PENDING',
+      evaluatedAt: new Date().toISOString(),
+      modelUsed: 'none',
+      error: 'Personality evaluation is disabled pending evaluation criteria approval.',
+      rawJson: {
+        error: 'Personality evaluation is disabled pending evaluation criteria approval.',
+        status: 'PENDING',
+        evaluatedAt: new Date().toISOString(),
+      },
+      success: false,
+    };
+  }
+
   // Short-circuit blank answers: award 0 marks, status COMPLETED, 0 LLM token consumption
   if (!request.studentAnswer || request.studentAnswer.trim().length === 0) {
     const canonicalCategory = canonicalizeCategory(request.section);

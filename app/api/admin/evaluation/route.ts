@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { isEligibilityCategory } from '@/lib/categories';
+import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,13 +62,18 @@ export async function GET(request: NextRequest) {
 
     const mappedTests = tests.map(test => {
       const hasFailed = test.status === 'evaluation_failed' || test.test_responses?.some(
-        r => REVIEWABLE_TYPES.includes(r.question?.type || '') && !isEligibilityCategory(r.question?.section) && r.evaluation_status === 'FAILED'
+        r => REVIEWABLE_TYPES.includes(r.question?.type || '') && !isEligibilityCategory(r.question?.section) && !isPersonalityCategory(r.question?.section) && r.evaluation_status === 'FAILED'
       );
 
       const hasPending = test.test_responses?.some(
         r => REVIEWABLE_TYPES.includes(r.question?.type || '') && 
              !isEligibilityCategory(r.question?.section) && 
+             !isPersonalityCategory(r.question?.section) &&
              (r.evaluation_status === 'PENDING' || r.evaluation_status === 'PROCESSING' || r.evaluation_status === 'RETRYING')
+      );
+
+      const hasScoredQuestions = test.test_responses?.some(
+        r => !isEligibilityCategory(r.question?.section) && !isPersonalityCategory(r.question?.section)
       );
 
       let effectiveStatus = test.status;
@@ -78,9 +83,11 @@ export async function GET(request: NextRequest) {
         effectiveStatus = 'evaluation_failed';
       } else if (hasPending || test.status === 'evaluating') {
         effectiveStatus = 'evaluating';
+      } else if (!hasScoredQuestions && test.status === 'evaluated') {
+        effectiveStatus = 'submitted';
       }
 
-      const isUnfinalized = effectiveStatus === 'evaluation_failed' || effectiveStatus === 'ineligible_attempt' || effectiveStatus === 'evaluating';
+      const isUnfinalized = effectiveStatus === 'evaluation_failed' || effectiveStatus === 'ineligible_attempt' || effectiveStatus === 'evaluating' || !hasScoredQuestions;
 
       return {
         id: test.id,

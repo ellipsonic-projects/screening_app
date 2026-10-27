@@ -205,7 +205,8 @@ export const CATEGORY_CRITERIA_REGISTRY: Record<CanonicalCategoryId, PredefinedC
     }
   ],
 
-  ELIGIBILITY: [] // Unscored category: never evaluated via subjective AI
+  ELIGIBILITY: [], // Unscored category: never evaluated via subjective AI
+  PERSONALITY: [] // Personality category: evaluation criteria completely disabled pending explicit approval
 };
 
 /**

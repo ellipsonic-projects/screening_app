@@ -22,6 +22,7 @@ import {
   MessageSquare, 
   Shield, 
   Bot,
+  UserCheck,
   ArrowLeft,
   ArrowRight,
   CheckCircle2
@@ -38,7 +39,8 @@ const ASSESSMENTS = [
   { id: 'EXECUTION_AND_RELIABILITY', title: 'Delivery & Dependability', desc: 'Evaluate task execution and planning.', icon: <Settings className="w-4 h-4" /> },
   { id: 'COMMUNICATION_AND_TEAMWORK', title: 'Written Communication & Collaboration', desc: 'Assess written communication and teamwork.', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'INTEGRITY', title: 'Ethics & Judgment', desc: 'Evaluate ethical behavior and integrity.', icon: <Shield className="w-4 h-4" /> },
-  { id: 'AI_LITERACY', title: 'AI Literacy & Responsible Use', desc: 'Assess prompt engineering and AI tool proficiency.', icon: <Bot className="w-4 h-4" /> }
+  { id: 'AI_LITERACY', title: 'AI Literacy & Responsible Use', desc: 'Assess prompt engineering and AI tool proficiency.', icon: <Bot className="w-4 h-4" /> },
+  { id: 'PERSONALITY', title: 'Personality (Unscored)', desc: 'Open-text personality assessment questions.', icon: <UserCheck className="w-4 h-4" /> }
 ];
 
 const QUESTION_TYPES: Record<string, Array<{ id: string, label: string }>> = {
@@ -79,6 +81,9 @@ const QUESTION_TYPES: Record<string, Array<{ id: string, label: string }>> = {
   ],
   AI_LITERACY: [
     { id: 'multi_select', label: 'Multi Select' },
+    { id: 'open_text', label: 'Open Text' }
+  ],
+  PERSONALITY: [
     { id: 'open_text', label: 'Open Text' }
   ]
 };
@@ -182,11 +187,16 @@ export default function CreateQuestionPage() {
     try {
       const token = localStorage.getItem('token');
       
+      if (section === 'PERSONALITY' && type !== 'open_text') {
+        toast.error('Personality category only supports open-text questions.');
+        return;
+      }
+
       const rawData: any = {
         type,
         section,
         questionText,
-        points,
+        points: section === 'PERSONALITY' ? 0 : points,
         weight,
         isPublished: status === 'published'
       };

@@ -217,6 +217,7 @@ export function QuestionsManager() {
       { header: 'Marks', key: 'marks', width: 10 }
     ];
     sheet.addRow({ section: 'Written Communication & Collaboration', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '10' });
+    sheet.addRow({ section: 'Personality', question: 'Describe a situation where you had to adapt to significant unexpected change at work or university.', minWords: '50', maxWords: '250', marks: '0' });
     await triggerDownload(workbook, 'open-text-template.xlsx');
   };
 
@@ -312,6 +313,15 @@ export function QuestionsManager() {
             sectionMap = canonical;
           }
 
+          if (sectionMap === 'PERSONALITY' && templateType !== 'open_text') {
+            missingFieldsCount++;
+            skippedDetails.push({ 
+              row: rowIndex, 
+              reason: 'Personality category only supports open-text questions.' 
+            });
+            return;
+          }
+
           const questionText = row['Question'] || row['Question Text'] || row['QuestionText'] || row['Question 1'] || '';
           const points = Number(row['Points'] || row['Marks']) || 10;
 
@@ -371,7 +381,7 @@ export function QuestionsManager() {
               questionText: String(questionText).trim(),
               type: 'open_text',
               section: sectionMap,
-              points,
+              points: sectionMap === 'PERSONALITY' ? 0 : points,
               expectedAnswerLength: (row['Minimum Words'] || row['Maximum Words']) ? `${row['Minimum Words'] || 0}-${row['Maximum Words'] || 300}` : undefined,
               isPublished: true
             });
@@ -955,7 +965,7 @@ export function QuestionsManager() {
                       </div>
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 text-sm">Open Text</h4>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Communication, Ethics & AI Literacy</p>
+                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Personality, Communication, Ethics & AI Literacy</p>
                       </div>
                       <Download className="w-4 h-4 text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>

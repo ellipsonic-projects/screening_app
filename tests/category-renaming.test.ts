@@ -46,7 +46,8 @@ async function runTests() {
     EXECUTION_AND_RELIABILITY: 'Delivery & Dependability',
     COMMUNICATION_AND_TEAMWORK: 'Written Communication & Collaboration',
     INTEGRITY: 'Ethics & Judgment',
-    AI_LITERACY: 'AI Literacy & Responsible Use'
+    AI_LITERACY: 'AI Literacy & Responsible Use',
+    PERSONALITY: 'Personality'
   };
 
   for (const [id, expectedLabel] of Object.entries(expectedLabels)) {
@@ -233,8 +234,8 @@ async function runTests() {
     'Third section in CATEGORY_ORDER is CODING'
   );
   assert(
-    CATEGORY_ORDER.length === 10,
-    `CATEGORY_ORDER contains exactly 10 canonical sections (found ${CATEGORY_ORDER.length})`
+    CATEGORY_ORDER.length === 11,
+    `CATEGORY_ORDER contains 11 canonical sections (found ${CATEGORY_ORDER.length})`
   );
 
   // Test question sorting logic
@@ -340,10 +341,10 @@ async function runTests() {
     );
   }
 
-  // Verify that SUPPORTED_DISPLAY_LABELS contains all 10 new exact labels
+  // Verify that SUPPORTED_DISPLAY_LABELS contains all 11 display labels
   assert(
-    SUPPORTED_DISPLAY_LABELS.length === 10,
-    `SUPPORTED_DISPLAY_LABELS has exactly 10 entries (count=${SUPPORTED_DISPLAY_LABELS.length})`
+    SUPPORTED_DISPLAY_LABELS.length === 11,
+    `SUPPORTED_DISPLAY_LABELS has exactly 11 entries (count=${SUPPORTED_DISPLAY_LABELS.length})`
   );
 
   // ========================================================

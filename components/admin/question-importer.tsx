@@ -223,6 +223,7 @@ export function QuestionImporter() {
       { header: 'Marks', key: 'marks', width: 10 }
     ];
     sheet.addRow({ section: 'Written Communication & Collaboration', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '5' });
+    sheet.addRow({ section: 'Personality', question: 'Describe a situation where you had to adapt to significant unexpected change at work or university.', minWords: '50', maxWords: '250', marks: '0' });
     await triggerDownload(workbook, 'open-text-template.xlsx');
   };
 
@@ -370,7 +371,7 @@ export function QuestionImporter() {
                     <FileText className="w-4 h-4" />
                   </div>
                   <h4 className="font-bold text-slate-900 text-xs">Open Text Template</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For AI Literacy & Responsible Use, Collaboration & Ownership.</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">For Personality, AI Literacy & Responsible Use, Collaboration & Ownership.</p>
                 </div>
                 <div className="mt-2.5 flex items-center text-[11px] font-semibold text-emerald-600">
                   <Download className="w-3 h-3 mr-1" /> Download

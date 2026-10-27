@@ -40,6 +40,7 @@ import {
   CATEGORY_ORDER, 
   getCategoryLabel, 
   isEligibilityCategory,
+  isPersonalityCategory,
   CanonicalCategoryId
 } from '@/lib/categories';
 
@@ -167,7 +168,7 @@ export function ShortlistManager() {
 
   // Scored Categories Weight & Cutoffs
   const scoredCategories = useMemo(() => {
-    return CATEGORY_ORDER.filter(id => !isEligibilityCategory(id));
+    return CATEGORY_ORDER.filter(id => !isEligibilityCategory(id) && !isPersonalityCategory(id));
   }, []);
 
   const [categoryWeights, setCategoryWeights] = useState<Record<string, number>>({

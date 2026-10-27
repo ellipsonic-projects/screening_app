@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { enqueueEvaluationJob } from '@/lib/queue/evaluation-queue';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
 import { SubmitTestResponseSchema } from '@/lib/validators';
-import { isEligibilityCategory } from '@/lib/categories';
+import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
 import vm from 'vm';
 
@@ -158,6 +158,12 @@ export async function POST(
           message: 'Eligibility question is unscored and marked COMPLETED',
           status: 'COMPLETED'
         });
+      }
+
+      if (testResponse.question && isPersonalityCategory(testResponse.question.section)) {
+        return NextResponse.json({
+          message: 'Personality evaluation is disabled pending evaluation criteria approval.'
+        }, { status: 400 });
       }
 
       const trimmedAnswer = (testResponse.student_answer || '').trim();
@@ -500,6 +506,25 @@ export async function POST(
                   evaluationStatus: 'COMPLETED',
                   score: 0,
                   feedback: 'Eligibility and logistics response recorded.',
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+            continue;
+          }
+
+          // Personality questions: NEVER send to AI queue, keep unevaluated with null points
+          if (q && isPersonalityCategory(q.section)) {
+            await prisma.testResponse.updateMany({
+              where: { test_id: test.id, question_id: response.questionId },
+              data: {
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: 'PENDING',
+                ai_evaluation_json: {
+                  evaluationStatus: 'PENDING',
+                  score: null,
+                  feedback: 'Personality evaluation criteria pending approval.',
                   evaluatedAt: new Date().toISOString()
                 }
               }

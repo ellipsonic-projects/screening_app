@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { QuestionSchema } from '@/lib/validators';
-import { canonicalizeCategory } from '@/lib/categories';
+import { canonicalizeCategory, isPersonalityCategory } from '@/lib/categories';
 
 export async function DELETE(
   request: NextRequest,
@@ -115,6 +115,10 @@ export async function PUT(
     const validatedData = validationResult.data;
     const rawSection = validatedData.section;
     const canonicalSection = rawSection ? (canonicalizeCategory(rawSection) || rawSection) : undefined;
+
+    if (isPersonalityCategory(canonicalSection) && validatedData.type !== 'open_text') {
+      return NextResponse.json({ message: 'Personality category only supports open-text questions' }, { status: 400 });
+    }
 
     const question = await prisma.question.update({
       where: { id },

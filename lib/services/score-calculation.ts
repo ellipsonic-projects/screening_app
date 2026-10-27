@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { isEligibilityCategory, canonicalizeCategory } from '@/lib/categories';
+import { isEligibilityCategory, isPersonalityCategory, canonicalizeCategory } from '@/lib/categories';
 
 export async function recalculateTestScore(testId: string): Promise<number> {
   const test = await prisma.test.findUnique({
@@ -38,12 +38,12 @@ export async function recalculateTestScore(testId: string): Promise<number> {
     return 0;
   }
 
-  // Calculate maximum possible points for the test (Eligibility is unscored)
+  // Calculate maximum possible points for the test (Eligibility and Personality are unscored)
   let totalPossiblePoints = 0;
   const sectionTotals: Record<string, number> = {};
 
   for (const tq of test.test_questions) {
-    if (isEligibilityCategory(tq.question.section)) continue;
+    if (isEligibilityCategory(tq.question.section) || isPersonalityCategory(tq.question.section)) continue;
     totalPossiblePoints += tq.question.points || 0;
     const section = canonicalizeCategory(tq.question.section) || 'uncategorized';
     if (!(section in sectionTotals)) {
@@ -70,7 +70,7 @@ export async function recalculateTestScore(testId: string): Promise<number> {
   let hasPendingEvaluation = false;
 
   for (const response of responses) {
-    if (isEligibilityCategory(response.question?.section)) continue;
+    if (isEligibilityCategory(response.question?.section) || isPersonalityCategory(response.question?.section)) continue;
     
     const isSubjective = REVIEWABLE_TYPES.includes(response.question?.type || '');
     const aiEval = aiEvaluations.find(e => e.test_response_id === response.id);
@@ -102,10 +102,47 @@ export async function recalculateTestScore(testId: string): Promise<number> {
   }
 
   for (const evaluation of aiEvaluations) {
-    if (isEligibilityCategory(evaluation.section)) continue;
+    if (isEligibilityCategory(evaluation.section) || isPersonalityCategory(evaluation.section)) continue;
     if (evaluation.obtained_marks !== null && evaluation.obtained_marks !== undefined) {
       overallAiMarks += Number(evaluation.obtained_marks);
     }
+  }
+
+  // Check if test has any scored categories
+  const hasAnyScoredQuestions = test.test_questions.some(
+    (tq: any) => !isEligibilityCategory(tq.question.section) && !isPersonalityCategory(tq.question.section)
+  );
+
+  if (!hasAnyScoredQuestions) {
+    // If the test has NO scored questions (e.g. only Personality and/or Eligibility):
+    // Ensure pending Personality evaluations do not incorrectly mark the entire assessment as fully evaluated!
+    // Maintain score: null, and preserve submitted/in_progress status.
+    await prisma.test.update({
+      where: { id: testId },
+      data: {
+        score: null,
+        status: test.status === 'in_progress' ? 'in_progress' : (test.status || 'submitted')
+      }
+    });
+
+    await prisma.testAnalytics.upsert({
+      where: { test_id: testId },
+      update: {
+        total_score: null,
+        overall_percentage: null,
+        overall_ai_marks: null,
+        section_totals: sectionTotals
+      },
+      create: {
+        test_id: testId,
+        total_score: null,
+        overall_percentage: null,
+        overall_ai_marks: null,
+        section_totals: sectionTotals
+      }
+    });
+
+    return 0;
   }
 
   const overallPercentage = totalPossiblePoints > 0 ? (totalEarnedPoints / totalPossiblePoints) * 100 : 0;
@@ -173,7 +210,7 @@ export async function recalculateTestScore(testId: string): Promise<number> {
   const updateData: any = {
     score: totalEarnedPoints
   };
-  if (test.status === 'evaluation_failed' || test.status === 'evaluating') {
+  if (test.status === 'evaluation_failed' || test.status === 'evaluating' || test.status === 'submitted') {
     updateData.status = 'evaluated';
   }
 

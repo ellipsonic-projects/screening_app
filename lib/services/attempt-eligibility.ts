@@ -1,4 +1,4 @@
-import { isEligibilityCategory } from '@/lib/categories';
+import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 
 /**
  * Determines whether a student's answer constitutes an attempted response.
@@ -77,7 +77,7 @@ export function calculateAttemptEligibility(params: {
 
 /**
  * Assesses attempt eligibility from full test context and submitted responses.
- * Strictly excludes Eligibility & Logistics questions from both denominator and attempted count.
+ * Strictly excludes Eligibility & Logistics and Personality questions from both denominator and attempted count.
  */
 export function assessTestAttemptEligibility(
   testQuestions: Array<{ question: { id: string; section?: string | null; type?: string | null } }>,
@@ -85,9 +85,9 @@ export function assessTestAttemptEligibility(
   newResponses?: Array<{ questionId: string; answer?: string | null }>,
   options?: { minPercentage?: number | null; enabled?: boolean | null }
 ): AttemptEligibilityResult {
-  // 1. Exclude Eligibility & Logistics questions from denominator
+  // 1. Exclude Eligibility & Logistics and Personality questions from denominator
   const applicableQuestions = testQuestions.filter(
-    tq => tq.question && !isEligibilityCategory(tq.question.section)
+    tq => tq.question && !isEligibilityCategory(tq.question.section) && !isPersonalityCategory(tq.question.section)
   );
   const applicableQuestionsCount = applicableQuestions.length;
 

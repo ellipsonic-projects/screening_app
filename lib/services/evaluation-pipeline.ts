@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma';
 import { evaluateAnswer } from '@/lib/evaluation-engine';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
-import { isEligibilityCategory } from '@/lib/categories';
+import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
 import { EvaluationRequest } from '@/types';
 
@@ -73,6 +73,27 @@ export async function processBackgroundEvaluations(
                   evaluationStatus: 'COMPLETED',
                   score: 0,
                   feedback: 'Eligibility and logistics questions are unscored.',
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+          }
+          continue;
+        }
+
+        // Defense-in-depth: Personality answers must never be evaluated by AI or scored
+        if (isPersonalityCategory(question.section)) {
+          if (existingResponse) {
+            await prisma.testResponse.update({
+              where: { id: existingResponse.id },
+              data: {
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: 'PENDING',
+                ai_evaluation_json: {
+                  evaluationStatus: 'PENDING',
+                  score: null,
+                  feedback: 'Personality evaluation criteria pending approval.',
                   evaluatedAt: new Date().toISOString()
                 }
               }
@@ -419,6 +440,25 @@ export async function gradePersistedTestResponses(testId: string): Promise<numbe
   for (const resp of test.test_responses || []) {
     const q = questionMap.get(resp.question_id);
     if (!q) continue;
+
+    // Defense-in-depth: Personality questions must never be evaluated or scored
+    if (isPersonalityCategory(q.section)) {
+      await prisma.testResponse.update({
+        where: { id: resp.id },
+        data: {
+          points_earned: null,
+          is_correct: null,
+          evaluation_status: 'PENDING',
+          ai_evaluation_json: {
+            evaluationStatus: 'PENDING',
+            score: null,
+            feedback: 'Personality evaluation criteria pending approval.',
+            evaluatedAt: new Date().toISOString()
+          }
+        }
+      });
+      continue;
+    }
 
     const answer = resp.student_answer || '';
     const qPoints = q.points || 0;

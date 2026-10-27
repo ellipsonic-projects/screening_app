@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { isPersonalityCategory } from '@/lib/categories';
 
 // ==================== Auth Schemas ====================
 export const RegisterSchema = z.object({
@@ -78,6 +79,14 @@ export const QuestionSchema = z.object({
   return true;
 }, {
   message: 'Missing required configuration for the selected question type',
+}).refine((data) => {
+  if (isPersonalityCategory(data.section)) {
+    return data.type === 'open_text';
+  }
+  return true;
+}, {
+  message: 'Personality category only supports open-text questions',
+  path: ['type'],
 });
 
 export const SubmitTestResponseSchema = z.object({

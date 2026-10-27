@@ -628,6 +628,8 @@ export function TestInterface({ testId }: { testId: string }) {
         return UserCheck;
       case 'ELIGIBILITY':
         return ShieldCheck;
+      case 'PERSONALITY':
+        return UserCheck;
       case 'APTITUDE':
         return BookOpen;
       default:

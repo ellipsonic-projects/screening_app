@@ -194,11 +194,16 @@ export default function EditQuestionPage() {
     try {
       const token = localStorage.getItem('token');
       
+      if (section === 'PERSONALITY' && type !== 'open_text') {
+        toast.error('Personality category only supports open-text questions.');
+        return;
+      }
+
       const rawData: any = {
         type,
         section,
         questionText,
-        points,
+        points: section === 'PERSONALITY' ? 0 : points,
         weight,
         isPublished: status === 'published'
       };
@@ -392,7 +397,13 @@ export default function EditQuestionPage() {
                   <label className="block text-xs font-bold text-slate-700 mb-1">Assessment Section</label>
                   <select
                     value={section}
-                    onChange={(e) => setSection(e.target.value)}
+                    onChange={(e) => {
+                      const newSec = e.target.value;
+                      setSection(newSec);
+                      if (newSec === 'PERSONALITY') {
+                        setType('open_text');
+                      }
+                    }}
                     className="w-full h-8.5 px-3 py-1 border border-slate-200 rounded-lg text-xs bg-slate-50/70 focus:bg-white text-slate-800 font-medium outline-none transition cursor-pointer"
                   >
                     {CATEGORY_ORDER.map((catId) => (
@@ -409,12 +420,19 @@ export default function EditQuestionPage() {
                     onChange={(e) => setType(e.target.value)}
                     className="w-full h-8.5 px-3 py-1 border border-slate-200 rounded-lg text-xs bg-slate-50/70 focus:bg-white text-slate-800 font-medium outline-none transition cursor-pointer"
                   >
-                    <option value="mcq">Multiple Choice (MCQ)</option>
-                    {section === 'ELIGIBILITY' && <option value="single_select">Single Select</option>}
-                    <option value="multi_select">Multi Select</option>
-                    <option value="coding">Coding Challenge</option>
-                    <option value="ranking">Ranking</option>
-                    <option value="structured_response">Structured Response</option>
+                    {section === 'PERSONALITY' ? (
+                      <option value="open_text">Open Text</option>
+                    ) : (
+                      <>
+                        <option value="mcq">Multiple Choice (MCQ)</option>
+                        {section === 'ELIGIBILITY' && <option value="single_select">Single Select</option>}
+                        <option value="open_text">Open Text</option>
+                        <option value="multi_select">Multi Select</option>
+                        <option value="coding">Coding Challenge</option>
+                        <option value="ranking">Ranking</option>
+                        <option value="structured_response">Structured Response</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
@@ -683,17 +701,19 @@ export default function EditQuestionPage() {
               )}
 
               {/* Marks Section */}
-              <div className="pt-2 border-t border-slate-100">
-                <label className="block text-xs font-bold text-slate-700 mb-1">Marks</label>
-                <Input 
-                  type="number" 
-                  min="0"
-                  max="100"
-                  value={points} 
-                  onChange={(e) => setPoints(parseInt(e.target.value) || 0)} 
-                  className="w-32 bg-slate-50/70 border-slate-200 h-8.5 text-xs font-bold rounded-lg"
-                />
-              </div>
+              {!['ELIGIBILITY', 'PERSONALITY'].includes(section) && (
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Marks</label>
+                  <Input 
+                    type="number" 
+                    min="0"
+                    max="100"
+                    value={points} 
+                    onChange={(e) => setPoints(parseInt(e.target.value) || 0)} 
+                    className="w-32 bg-slate-50/70 border-slate-200 h-8.5 text-xs font-bold rounded-lg"
+                  />
+                </div>
+              )}
 
               <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                 <Button 

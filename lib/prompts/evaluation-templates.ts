@@ -3,7 +3,8 @@ import {
   canonicalizeCategory, 
   CATEGORIES, 
   CanonicalCategoryId, 
-  isEligibilityCategory 
+  isEligibilityCategory,
+  isPersonalityCategory 
 } from '@/lib/categories';
 import { 
   getCriteriaForQuestion, 
@@ -39,6 +40,13 @@ export function getEvaluationPrompt(request: EvaluationRequest): string {
   if (isEligibilityCategory(rawSection)) {
     throw new Error(
       `Eligibility questions are unscored and must never be routed to the AI evaluation engine.`
+    );
+  }
+
+  // Guard against Personality category (evaluation completely disabled until criteria approved)
+  if (isPersonalityCategory(rawSection)) {
+    throw new Error(
+      `Personality evaluation is completely disabled until evaluation criteria are explicitly approved.`
     );
   }
 

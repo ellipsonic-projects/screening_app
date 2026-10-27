@@ -20,6 +20,7 @@ import {
   Settings,
   MessageSquare,
   Bot,
+  UserCheck,
   Award,
   AlertTriangle
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { AIEvaluationCard } from './ai-evaluation-card';
 import { 
   canonicalizeCategory, 
   isEligibilityCategory, 
+  isPersonalityCategory,
   getCategoryLabel 
 } from '@/lib/categories';
 
@@ -54,6 +56,8 @@ const getSectionIcon = (sectionName: string) => {
       return <Shield className="w-3.5 h-3.5 text-emerald-600" />;
     case 'AI_LITERACY':
       return <Bot className="w-3.5 h-3.5 text-purple-600" />;
+    case 'PERSONALITY':
+      return <UserCheck className="w-3.5 h-3.5 text-indigo-600" />;
     default:
       return <Shield className="w-3.5 h-3.5 text-blue-600" />;
   }
@@ -64,8 +68,9 @@ const SectionScoreCard = ({
 }: {
   sectionName: string, marksObtained: number | null, totalMarks: number | null, isCompleted: boolean
 }) => {
-  const isEligibility = isEligibilityCategory(sectionName) || totalMarks === null;
-  const percentage = (!isEligibility && totalMarks && totalMarks > 0 && marksObtained !== null) 
+  const isPersonality = isPersonalityCategory(sectionName);
+  const isEligibility = isEligibilityCategory(sectionName) || (!isPersonality && totalMarks === null);
+  const percentage = (!isEligibility && !isPersonality && totalMarks && totalMarks > 0 && marksObtained !== null) 
     ? Math.min(100, Math.max(0, (marksObtained / totalMarks) * 100)) 
     : 0;
 
@@ -90,7 +95,14 @@ const SectionScoreCard = ({
       </div>
 
       <div className="mt-2.5">
-        {isEligibility ? (
+        {isPersonality ? (
+          <div className="flex items-center justify-between text-xs font-semibold">
+            <span className="text-[10px] text-slate-400 font-medium">Evaluation</span>
+            <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+              Pending Criteria
+            </span>
+          </div>
+        ) : isEligibility ? (
           <div className="flex items-center justify-between text-xs font-semibold">
             <span className="text-[10px] text-slate-400 font-medium">Screening</span>
             <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">

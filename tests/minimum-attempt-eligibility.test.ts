@@ -139,6 +139,77 @@ async function runMinimumAttemptTests() {
   assert(evalExact.isEligible, 'Candidate is ELIGIBLE with exact threshold (3/3)');
 
   // -------------------------------------------------------------
+  // UNIT TESTS: assessTestAttemptEligibility (Excluding Personality Questions)
+  // -------------------------------------------------------------
+  console.log('\n--- Suite 3b: Personality Category Attempt Gate Exclusion ---');
+
+  const mockQuestionsWithPersonality = [
+    { question: { id: 'pq1', section: 'APTITUDE', type: 'mcq' } },
+    { question: { id: 'pq2', section: 'APTITUDE', type: 'mcq' } },
+    { question: { id: 'pq3', section: 'CODING', type: 'coding' } },
+    { question: { id: 'pq4', section: 'COMMUNICATION_AND_TEAMWORK', type: 'open_text' } },
+    { question: { id: 'pq5', section: 'PROBLEM_SOLVING', type: 'mcq' } },
+    // 2 Personality questions (canonical and mixed case)
+    { question: { id: 'pers1', section: 'PERSONALITY', type: 'open_text' } },
+    { question: { id: 'pers2', section: 'Personality', type: 'open_text' } },
+    // 1 Eligibility question
+    { question: { id: 'pel1', section: 'ELIGIBILITY', type: 'open_text' } },
+  ];
+
+  // 5 scored questions, 2 Personality questions, 1 Eligibility question.
+  // Denominator MUST be 5 (strictly excluding both Eligibility and Personality).
+  // 60% of 5 = ceil(3.0) = 3 attempts required.
+
+  // Case 1: Student leaves Personality questions BLANK, but answers 3 scored questions:
+  const answersBlankPersonality = [
+    { questionId: 'pq1', answer: 'Option A' },
+    { questionId: 'pq2', answer: 'Option B' },
+    { questionId: 'pq3', answer: 'console.log("hello")' },
+    { questionId: 'pq4', answer: '' }, // blank
+    { questionId: 'pq5', answer: '   ' }, // blank
+    { questionId: 'pers1', answer: '' }, // blank Personality
+    { questionId: 'pers2', answer: null }, // blank Personality
+    { questionId: 'pel1', answer: 'Yes' },
+  ];
+  const evalBlankPers = assessTestAttemptEligibility(mockQuestionsWithPersonality, undefined, answersBlankPersonality, { minPercentage: 60, enabled: true });
+  assert(evalBlankPers.applicableQuestionsCount === 5, 'Personality exclusion: Applicable count is 5 (excludes 2 Personality + 1 Eligibility)');
+  assert(evalBlankPers.attemptedCount === 3, 'Personality exclusion: Attempted count is 3 (3 scored questions attempted)');
+  assert(evalBlankPers.requiredAttempts === 3, 'Personality exclusion: Required attempts is 3 (ceil(5 * 0.6))');
+  assert(evalBlankPers.isEligible === true, 'Candidate with blank Personality is ELIGIBLE when answering 3/5 scored questions');
+
+  // Case 2: Student answers Personality questions, but only 2 scored questions (2/5 = 40% < 60%):
+  // Personality answers must NOT count as scored attempts in numerator to game the gate.
+  const answersAnsweredPersonalityUnderThreshold = [
+    { questionId: 'pq1', answer: 'Option A' },
+    { questionId: 'pq2', answer: 'Option B' },
+    { questionId: 'pq3', answer: '' }, // blank
+    { questionId: 'pq4', answer: '' }, // blank
+    { questionId: 'pq5', answer: null }, // blank
+    { questionId: 'pers1', answer: 'I adapt well to changes and enjoy collaboration.' },
+    { questionId: 'pers2', answer: 'I prioritize effectively by communicating early.' },
+    { questionId: 'pel1', answer: 'Yes' },
+  ];
+  const evalAnsweredPersUnder = assessTestAttemptEligibility(mockQuestionsWithPersonality, undefined, answersAnsweredPersonalityUnderThreshold, { minPercentage: 60, enabled: true });
+  assert(evalAnsweredPersUnder.applicableQuestionsCount === 5, 'Personality exclusion: Applicable count remains 5');
+  assert(evalAnsweredPersUnder.attemptedCount === 2, 'Personality answers do NOT inflate attemptedCount (only 2 scored attempts)');
+  assert(evalAnsweredPersUnder.isEligible === false, 'Candidate is INELIGIBLE when scored attempts are below 60%, even if Personality was answered');
+
+  // Case 3: Student answers Personality questions AND meets threshold on scored questions:
+  const answersAnsweredPersonalityAndScored = [
+    { questionId: 'pq1', answer: 'Option A' },
+    { questionId: 'pq2', answer: 'Option B' },
+    { questionId: 'pq3', answer: 'console.log("hello")' },
+    { questionId: 'pq4', answer: 'Communication answer' },
+    { questionId: 'pq5', answer: null },
+    { questionId: 'pers1', answer: 'Personality answer text' },
+    { questionId: 'pers2', answer: 'Another personality text' },
+  ];
+  const evalAnsweredPersOver = assessTestAttemptEligibility(mockQuestionsWithPersonality, undefined, answersAnsweredPersonalityAndScored, { minPercentage: 60, enabled: true });
+  assert(evalAnsweredPersOver.applicableQuestionsCount === 5, 'Personality exclusion: Applicable count is 5');
+  assert(evalAnsweredPersOver.attemptedCount === 4, 'Personality exclusion: Attempted count is 4 (4 scored questions attempted)');
+  assert(evalAnsweredPersOver.isEligible === true, 'Candidate is ELIGIBLE with answered Personality and sufficient scored attempts');
+
+  // -------------------------------------------------------------
   // INTEGRATION TESTS: Database Submission & Guardrails
   // -------------------------------------------------------------
   console.log('\n--- Suite 4: Database Submission & System Guardrails ---');

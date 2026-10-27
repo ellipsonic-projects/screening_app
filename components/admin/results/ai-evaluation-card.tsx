@@ -17,6 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 
 export function AIEvaluationCard({ 
   evaluation, 
@@ -45,7 +46,14 @@ export function AIEvaluationCard({
     setOverrideFeedback(evaluation.feedback || '');
   }, [evaluation]);
 
+  const isPersonality = isPersonalityCategory(evaluation.section);
+  const isEligibility = isEligibilityCategory(evaluation.section);
+  const isUnscored = isPersonality || isEligibility;
+
   const getResultInfo = (evaluation: any) => {
+    if (isPersonality) {
+      return { text: 'Pending Evaluation (Unscored)', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' };
+    }
     if (evaluation.status === 'FAILED') {
       return { text: 'Evaluation Failed', badgeClass: 'bg-[#FEE2E2] text-[#DC2626] border-[#FECACA]' };
     }
@@ -165,7 +173,16 @@ export function AIEvaluationCard({
 
         {/* Right: Points Awarded Box & Action Controls */}
         <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-          {evaluation.section !== 'ELIGIBILITY' && (
+          {isPersonality ? (
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl px-3 py-1.5 text-center shadow-2xs min-w-[95px]">
+              <div className="text-xs font-bold text-amber-800 leading-none">
+                Pending
+              </div>
+              <div className="text-[9px] font-bold uppercase text-amber-600 tracking-wider mt-1">
+                Unevaluated
+              </div>
+            </div>
+          ) : !isUnscored && (
             <div className="bg-white border border-slate-200/80 rounded-xl px-3.5 py-1.5 text-center shadow-2xs min-w-[95px]">
               <div className="text-sm font-black text-[#1760FF] leading-none">
                 <span>{evaluation.pointsEarned !== null && evaluation.pointsEarned !== undefined ? evaluation.pointsEarned : (evaluation.status === 'FAILED' ? 'N/A' : (evaluation.status === 'PROCESSING' || evaluation.status === 'PENDING' ? 'Pending' : 0))}</span>
@@ -179,7 +196,7 @@ export function AIEvaluationCard({
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-1">
-            {evaluation.section !== 'ELIGIBILITY' && (
+            {!isUnscored && (
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -190,7 +207,7 @@ export function AIEvaluationCard({
                 <Pencil className="w-3.5 h-3.5" />
               </Button>
             )}
-            {evaluation.section !== 'ELIGIBILITY' && evaluation.status !== 'COMPLETED' && (
+            {!isUnscored && evaluation.status !== 'COMPLETED' && (
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -307,6 +324,23 @@ export function AIEvaluationCard({
           </div>
 
           {!isAiBoxCollapsed && (
+            isPersonality ? (
+              <div className="border border-slate-200/80 rounded-xl p-3.5 bg-slate-50/50 flex flex-col justify-between shadow-2xs min-w-0">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${resultInfo.badgeClass}`}>
+                      {resultInfo.text}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Model: None
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed mt-2.5 break-words">
+                    Personality responses are preserved unscored. AI evaluation is disabled until evaluation criteria are explicitly approved.
+                  </p>
+                </div>
+              </div>
+            ) : (
             <div className="border border-slate-200/80 rounded-xl p-3.5 bg-slate-50/50 flex flex-col justify-between shadow-2xs min-w-0">
               <div>
                 {/* Meta Row: Status Pill & Model info */}
@@ -410,12 +444,13 @@ export function AIEvaluationCard({
 
               </div>
             </div>
+            )
           )}
         </div>
       </div>
 
       {/* Alert States for Processing / Failed */}
-      {(evaluation.status === 'PENDING' || evaluation.status === 'PROCESSING') && evaluation.section !== 'ELIGIBILITY' && (
+      {(evaluation.status === 'PENDING' || evaluation.status === 'PROCESSING') && !isUnscored && (
         <div className="mt-3 p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center gap-2 text-xs">
           <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin shrink-0" />
           <span className="font-medium text-amber-900">

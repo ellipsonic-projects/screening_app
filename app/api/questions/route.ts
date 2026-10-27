@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { QuestionSchema } from '@/lib/validators';
 import prisma from '@/lib/prisma';
-import { canonicalizeCategory } from '@/lib/categories';
+import { canonicalizeCategory, isPersonalityCategory } from '@/lib/categories';
 
 /**
  * GET /api/questions
@@ -94,6 +94,9 @@ export async function POST(request: NextRequest) {
     const canonicalSection = rawSection ? canonicalizeCategory(rawSection) : 'APTITUDE';
     if (rawSection && !canonicalSection) {
       return NextResponse.json({ message: `Invalid category: "${rawSection}"` }, { status: 400 });
+    }
+    if (isPersonalityCategory(canonicalSection) && validatedData.type !== 'open_text') {
+      return NextResponse.json({ message: 'Personality category only supports open-text questions' }, { status: 400 });
     }
 
     const question = await prisma.question.create({

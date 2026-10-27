@@ -4,6 +4,7 @@ import {
   CATEGORY_ORDER, 
   canonicalizeCategory, 
   isEligibilityCategory, 
+  isPersonalityCategory,
   getCategoryLabel 
 } from '@/lib/categories';
 
@@ -331,7 +332,7 @@ export async function calculateShortlist(options: {
     let hasPendingSubEval = false;
 
     for (const r of test.test_responses) {
-      if (isEligibilityCategory(r.question?.section)) continue;
+      if (isEligibilityCategory(r.question?.section) || isPersonalityCategory(r.question?.section)) continue;
       const isReviewable = REVIEWABLE_TYPES.includes(r.question?.type || '');
       const aiStatus = (r.ai_evaluation as any)?.evaluation_status || r.evaluation_status;
 
@@ -367,10 +368,10 @@ export async function calculateShortlist(options: {
     const categoryEarnedMap: Record<string, number> = {};
     const categoryMaxMap: Record<string, number> = {};
 
-    // 1. Compute Max Marks per category from assigned test questions (excluding Eligibility)
+    // 1. Compute Max Marks per category from assigned test questions (excluding Eligibility and Personality)
     for (const tq of test.test_questions) {
       const sec = canonicalizeCategory(tq.question.section);
-      if (!sec || isEligibilityCategory(sec)) continue;
+      if (!sec || isEligibilityCategory(sec) || isPersonalityCategory(sec)) continue;
 
       const pts = Number(tq.question.points || 0);
       overallMaxMarks += pts;
@@ -380,11 +381,11 @@ export async function calculateShortlist(options: {
       }
     }
 
-    // 2. Compute Earned Marks per category from responses (excluding Eligibility)
+    // 2. Compute Earned Marks per category from responses (excluding Eligibility and Personality)
     if (!isIneligible && !needsReview) {
       for (const r of test.test_responses) {
         const sec = canonicalizeCategory(r.question.section);
-        if (!sec || isEligibilityCategory(sec)) continue;
+        if (!sec || isEligibilityCategory(sec) || isPersonalityCategory(sec)) continue;
 
         const ai = r.ai_evaluation as any;
         let earned = 0;
@@ -418,7 +419,7 @@ export async function calculateShortlist(options: {
     ]);
 
     for (const cat of allRelevantCategories) {
-      if (isEligibilityCategory(cat)) continue;
+      if (isEligibilityCategory(cat) || isPersonalityCategory(cat)) continue;
 
       const earned = categoryEarnedMap[cat] || 0;
       const max = categoryMaxMap[cat] || 0;

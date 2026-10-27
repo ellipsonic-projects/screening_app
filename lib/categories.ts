@@ -20,7 +20,8 @@ export type CanonicalCategoryId =
   | 'EXECUTION_AND_RELIABILITY'
   | 'COMMUNICATION_AND_TEAMWORK'
   | 'INTEGRITY'
-  | 'AI_LITERACY';
+  | 'AI_LITERACY'
+  | 'PERSONALITY';
 
 export interface CategoryMetadata {
   id: CanonicalCategoryId;
@@ -101,6 +102,13 @@ export const CATEGORIES: Record<CanonicalCategoryId, CategoryMetadata> = {
     isScored: true,
     description: 'AI tooling proficiency, prompt engineering, and responsible use.',
   },
+  PERSONALITY: {
+    id: 'PERSONALITY',
+    label: 'Personality',
+    legacyLabel: 'Personality',
+    isScored: false,
+    description: 'Open-text personality assessment questions.',
+  },
 };
 
 /**
@@ -117,6 +125,7 @@ export const CATEGORY_ORDER: CanonicalCategoryId[] = [
   'COMMUNICATION_AND_TEAMWORK',
   'INTEGRITY',
   'AI_LITERACY',
+  'PERSONALITY',
 ];
 
 export const CATEGORIES_LIST: CategoryMetadata[] = CATEGORY_ORDER.map(
@@ -149,6 +158,7 @@ const ALIAS_MAP: Record<string, CanonicalCategoryId> = {
   [normalizeKey('COMMUNICATION_AND_TEAMWORK')]: 'COMMUNICATION_AND_TEAMWORK',
   [normalizeKey('INTEGRITY')]: 'INTEGRITY',
   [normalizeKey('AI_LITERACY')]: 'AI_LITERACY',
+  [normalizeKey('PERSONALITY')]: 'PERSONALITY',
 
   // Exact New Display Names
   [normalizeKey('Quantitative & Logical Reasoning')]: 'APTITUDE',
@@ -163,6 +173,8 @@ const ALIAS_MAP: Record<string, CanonicalCategoryId> = {
   [normalizeKey('Ethics & Judgment')]: 'INTEGRITY',
   [normalizeKey('Ethics & Judgement')]: 'INTEGRITY',
   [normalizeKey('AI Literacy & Responsible Use')]: 'AI_LITERACY',
+  [normalizeKey('Personality')]: 'PERSONALITY',
+  [normalizeKey('Personality Assessment')]: 'PERSONALITY',
 
   // Legacy Display Names
   [normalizeKey('Aptitude')]: 'APTITUDE',
@@ -253,6 +265,13 @@ export function getCategoryLabel(input: unknown, fallback?: string): string {
  */
 export function isEligibilityCategory(input: unknown): boolean {
   return canonicalizeCategory(input) === 'ELIGIBILITY';
+}
+
+/**
+ * Checks whether a category represents Personality (which is completely unevaluated and unscored).
+ */
+export function isPersonalityCategory(input: unknown): boolean {
+  return canonicalizeCategory(input) === 'PERSONALITY';
 }
 
 /**

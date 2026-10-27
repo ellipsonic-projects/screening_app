@@ -1,5 +1,5 @@
 // lib/questionMapper.ts
-import { canonicalizeCategory, isEligibilityCategory, SUPPORTED_DISPLAY_LABELS } from '@/lib/categories';
+import { canonicalizeCategory, isEligibilityCategory, isPersonalityCategory, SUPPORTED_DISPLAY_LABELS } from '@/lib/categories';
 
 export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   // Raw data from either the Excel importer or the Create Question Wizard state
@@ -22,6 +22,15 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
     );
   }
   const section = canonicalSection;
+
+  // Enforce open-text only for Personality category
+  if (isPersonalityCategory(section)) {
+    if (type !== 'open_text' || (rawType && !['open_text', 'open text'].includes(rawType))) {
+      throw new Error(
+        `Invalid question type "${rawType || type}" for Personality category: Personality only supports open-text questions.`
+      );
+    }
+  }
 
   // 3. Construct unified optionsJson object
   let optionsJson: any = {};
@@ -116,7 +125,7 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
 
 
   // 4. Construct Final Payload
-  const showsMarks = !isEligibilityCategory(section);
+  const showsMarks = !isEligibilityCategory(section) && !isPersonalityCategory(section);
   
   const payload = {
     ...(rowIndex !== undefined ? { _rowIndex: rowIndex } : {}),
