@@ -23,9 +23,20 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
+    const roundParam = searchParams.get('round');
+    const templateId = searchParams.get('templateId') || searchParams.get('assessmentId');
+    const targetRound = roundParam ? parseInt(roundParam, 10) : undefined;
 
     // Build Prisma query filters
     const whereClause: any = {};
+
+    const testsWhere: any = {};
+    if (targetRound !== undefined && !isNaN(targetRound)) {
+      testsWhere.round = targetRound;
+    }
+    if (templateId) {
+      testsWhere.template_id = templateId;
+    }
 
     const students = await prisma.student.findMany({
       where: whereClause,
@@ -34,8 +45,21 @@ export async function GET(request: NextRequest) {
           select: { email: true }
         },
         tests: {
-          select: { score: true, created_at: true },
-          orderBy: { created_at: 'desc' }
+          where: Object.keys(testsWhere).length > 0 ? testsWhere : undefined,
+          select: {
+            id: true,
+            score: true,
+            status: true,
+            round: true,
+            title: true,
+            template_id: true,
+            created_at: true,
+            end_time: true
+          },
+          orderBy: [
+            { round: 'desc' },
+            { created_at: 'desc' }
+          ]
         }
       },
       take: limit,
@@ -49,6 +73,16 @@ export async function GET(request: NextRequest) {
       const validTests = tests.filter(t => t.score !== null);
       const avg_score = validTests.length > 0 ? Number(validTests[0].score) : 0;
 
+      const rounds = tests.map(t => ({
+        id: t.id,
+        round: t.round,
+        title: t.title || (t.round === 2 ? 'Round 2 Technical Interview Assessment' : 'Round 1 Assessment'),
+        score: t.score !== null ? Number(t.score) : null,
+        status: t.status,
+        submittedAt: t.end_time,
+        templateId: t.template_id
+      }));
+
       return {
         id: s.id,
         fullName: s.full_name,
@@ -58,6 +92,7 @@ export async function GET(request: NextRequest) {
         email: s.user?.email || '',
         test_count,
         avg_score,
+        rounds,
         eligibility_status: 'N/A',
         eligibility_reason: 'N/A'
       };

@@ -3,10 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '@/context/auth-context';
-import { toast } from 'react-hot-toast';
-import { User, Clock, FileText, Layers, BadgeCheck, Play, ArrowRight, CheckCircle } from 'lucide-react';
-import Link from 'next/link';
-import { BrandLogo } from '@/components/common/BrandLogo';
+import { Clock, FileText, Layers, BadgeCheck, Play, CheckCircle, Loader2 } from 'lucide-react';
+import { DecorativeBackground } from '@/components/common/DecorativeBackground';
+import { StudentHeader } from '@/components/student/student-header';
 
 interface Test {
   id: string;
@@ -16,13 +15,15 @@ interface Test {
   totalQuestions?: number;
   createdAt: string;
   results_published?: boolean;
+  round?: number;
+  title?: string;
+  templateId?: string;
 }
 
 export function StudentDashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [tests, setTests] = useState<Test[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -33,9 +34,13 @@ export function StudentDashboard() {
       const token = localStorage.getItem('token');
       
       try {
-        await axios.get('/api/students/profile', {
+        const profileRes = await axios.get('/api/students/profile', {
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (!profileRes.data.student?.profileCompleted) {
+          window.location.href = '/student/profile';
+          return;
+        }
       } catch (err: any) {
         if (err.response?.status === 404) {
           window.location.href = '/student/profile';
@@ -67,17 +72,15 @@ export function StudentDashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = '/auth/login';
-  };
-
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-slate-50">
-        <div className="animate-pulse flex flex-col items-center">
-          <div className="w-12 h-12 bg-blue-100 rounded-xl mb-4"></div>
-          <div className="text-slate-400 font-bold text-sm tracking-widest uppercase">Loading Portal...</div>
+      <div className="min-h-screen bg-[#F3F7FD] flex flex-col justify-center items-center font-sans">
+        <DecorativeBackground />
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="w-12 h-12 rounded-2xl bg-[#EAF2FE] text-[#1760FF] flex items-center justify-center mb-4 shadow-sm">
+            <Loader2 className="w-6 h-6 animate-spin text-[#1760FF]" />
+          </div>
+          <div className="text-[#607797] font-bold text-xs tracking-widest uppercase">Loading Portal...</div>
         </div>
       </div>
     );
@@ -85,116 +88,139 @@ export function StudentDashboard() {
 
   const isCompleted = tests.length > 0 && ['submitted', 'evaluated', 'auto_submitted'].includes(tests[0].status);
   const isInProgress = tests.length > 0 && tests[0].status === 'in_progress';
+  const currentTest = tests[0];
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] flex flex-col font-sans">
-      {/* ATS Minimalist Navbar */}
-      <nav className="bg-white border-b border-slate-200/60 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BrandLogo size="md" className="items-start flex-row items-center" />
-            <span className="font-extrabold text-slate-400 tracking-tight ml-2">| Candidate Portal</span>
-          </div>
-          <div className="flex items-center gap-6">
-            <Link href="/student/profile" className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">
-              <User className="w-4 h-4" />
-              My Profile
-            </Link>
-            <span className="text-sm font-medium text-slate-500 hidden sm:block">{user?.email}</span>
-            <button
-              onClick={handleLogout}
-              className="text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-[#F3F7FD] relative overflow-x-hidden text-[#10234E] font-sans selection:bg-blue-100 selection:text-blue-900 flex flex-col">
+      {/* Decorative Background Waves & Curves Matching Reference */}
+      <DecorativeBackground />
+
+      {/* Full-Width Candidate Portal Header */}
+      <StudentHeader
+        variant="navbar"
+        badge="CANDIDATE PORTAL"
+        showProfile
+        showEmail
+        showLogout
+      />
 
       {/* Main Focus Container */}
-      <main className="flex-1 max-w-3xl w-full mx-auto px-6 py-12 md:py-24 flex flex-col justify-center">
-        
+      <main className="relative z-10 flex-1 max-w-4xl w-full mx-auto px-6 py-12 md:py-24 flex flex-col justify-center">
+        {/* Eyebrow and Heading */}
         <div className="mb-8">
-          <span className="text-xs font-bold uppercase tracking-widest text-slate-400 block mb-2">Current Assessment</span>
-          <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">Round 1 Assessment</h1>
+          <span className="text-xs font-bold uppercase tracking-widest text-[#7E92A9] block mb-2">
+            CURRENT ASSESSMENT
+          </span>
+          <h1 className="text-3xl sm:text-4xl md:text-[44px] font-black text-[#10234E] tracking-tight leading-tight">
+            {currentTest?.title || (currentTest?.round ? `Round ${currentTest.round} Assessment` : 'Round 1 Assessment')}
+          </h1>
         </div>
 
         {/* Primary Assessment Card */}
-        {tests.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-12 text-center text-slate-500 font-medium">
+        {!currentTest ? (
+          <div className="bg-white border border-[#DCE5F0] rounded-2xl sm:rounded-[24px] shadow-[0_4px_25px_rgba(16,35,78,0.04)] p-12 text-center text-[#607797] font-medium">
             No assessment available at this time.
           </div>
         ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-8 space-y-6">
-            
-            {/* Meta Data Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <Clock className="w-4 h-4 text-slate-400" /> Duration
-                </div>
-                <p className="text-base font-semibold text-slate-900">{tests[0].totalDuration || 60} Minutes</p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <FileText className="w-4 h-4 text-slate-400" /> Questions
-                </div>
-                <p className="text-base font-semibold text-slate-900">{tests[0].totalQuestions || 29}</p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <Layers className="w-4 h-4 text-slate-400" /> Format
-                </div>
-                <p className="text-base font-semibold text-slate-900">Mixed Sections</p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <BadgeCheck className="w-4 h-4 text-slate-400" /> Status
+          <div className="bg-white border border-[#DCE5F0] rounded-2xl sm:rounded-[24px] shadow-[0_4px_25px_rgba(16,35,78,0.04)] p-6 sm:p-8 md:p-10 space-y-8">
+            {/* Meta Data 4-Column Grid with Subtle Dividers */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-0">
+              {/* Metric 1: DURATION */}
+              <div className="flex items-center gap-3.5 md:pr-6 md:border-r md:border-[#EEF3FA]">
+                <div className="w-11 h-11 rounded-full bg-[#EBF3FE] text-[#1760FF] flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div>
-                  {isCompleted ? (
-                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                      Completed
-                    </span>
-                  ) : isInProgress ? (
-                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      In Progress
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-                      Available
-                    </span>
-                  )}
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#7E92A9] block">
+                    DURATION
+                  </span>
+                  <span className="text-[17px] sm:text-[18px] font-bold text-[#10234E]">
+                    {currentTest.totalDuration || 60} Minutes
+                  </span>
+                </div>
+              </div>
+
+              {/* Metric 2: QUESTIONS */}
+              <div className="flex items-center gap-3.5 md:px-6 md:border-r md:border-[#EEF3FA]">
+                <div className="w-11 h-11 rounded-full bg-[#EBF3FE] text-[#1760FF] flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#7E92A9] block">
+                    QUESTIONS
+                  </span>
+                  <span className="text-[17px] sm:text-[18px] font-bold text-[#10234E]">
+                    {currentTest.totalQuestions ?? 42}
+                  </span>
+                </div>
+              </div>
+
+              {/* Metric 3: FORMAT */}
+              <div className="flex items-center gap-3.5 md:px-6 md:border-r md:border-[#EEF3FA]">
+                <div className="w-11 h-11 rounded-full bg-[#EBF3FE] text-[#1760FF] flex items-center justify-center shrink-0">
+                  <Layers className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#7E92A9] block">
+                    FORMAT
+                  </span>
+                  <span className="text-[17px] sm:text-[18px] font-bold text-[#10234E]">
+                    Mixed Sections
+                  </span>
+                </div>
+              </div>
+
+              {/* Metric 4: STATUS */}
+              <div className="flex items-center gap-3.5 md:pl-6">
+                <div className="w-11 h-11 rounded-full bg-[#EBF3FE] text-[#1760FF] flex items-center justify-center shrink-0">
+                  <BadgeCheck className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#7E92A9] block mb-1">
+                    STATUS
+                  </span>
+                  <div>
+                    {isCompleted ? (
+                      <span className="inline-flex items-center px-3.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Completed
+                      </span>
+                    ) : isInProgress ? (
+                      <span className="inline-flex items-center px-3.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        In Progress
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-3.5 py-0.5 rounded-full text-xs font-bold bg-[#EEF5FF] text-[#1760FF] border border-[#BFDBFE]/60">
+                        Available
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <hr className="border-slate-100" />
-
-            {/* Action Area */}
-            <div>
+            {/* Action Button Area */}
+            <div className="pt-2">
               {isCompleted ? (
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-emerald-500" />
-                  <p className="text-sm font-medium text-slate-700">You have successfully submitted this assessment. The recruitment team will review your results.</p>
+                <div className="bg-[#F8FAFC] border border-[#E2ECF8] rounded-xl p-4 flex items-center gap-3 text-slate-700">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+                  <p className="text-sm font-medium">
+                    You have successfully submitted this assessment. The recruitment team will review your results.
+                  </p>
                 </div>
               ) : (
                 <button
                   onClick={() => {
                     setIsLoading(true);
-                    window.location.href = `/student/test/${tests[0].id}`;
+                    window.location.href = `/student/test/${currentTest.id}`;
                   }}
-                  className="h-10 px-5 py-2 w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
+                  className="h-[48px] px-6 bg-[#1760FF] hover:bg-[#1250DF] active:scale-[0.99] text-white font-bold text-[14px] sm:text-[15px] rounded-xl shadow-[0_4px_14px_rgba(23,96,255,0.25)] hover:shadow-[0_6px_20px_rgba(23,96,255,0.3)] transition-all flex items-center gap-2.5 cursor-pointer"
                 >
-                  {isInProgress ? 'Resume Assessment' : 'Start Assessment'}
-                  {isInProgress ? <ArrowRight className="w-4 h-4" /> : <Play className="w-4 h-4" fill="currentColor" />}
+                  <span>{isInProgress ? 'Resume Assessment' : 'Start Assessment'}</span>
+                  <Play className="w-3.5 h-3.5 fill-white text-white" />
                 </button>
               )}
             </div>
-            
           </div>
-        </div>
         )}
       </main>
     </div>

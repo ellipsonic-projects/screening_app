@@ -3,8 +3,13 @@ import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { enqueueEvaluationJob } from '@/lib/queue/evaluation-queue';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
+import { processPersonalityEvaluationsForTest } from '@/lib/services/evaluation-pipeline';
 import { SubmitTestResponseSchema } from '@/lib/validators';
+import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
+import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
 import vm from 'vm';
+
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -100,10 +105,23 @@ export async function POST(
 
     // Special case for reevaluate
     if (action === 'reevaluate') {
-      const data = await request.json();
+      if (!id || typeof id !== 'string' || id.trim() === '') {
+        return NextResponse.json({ message: 'Valid testId is required in the route parameter' }, { status: 400 });
+      }
+
+      const testRecord = await prisma.test.findUnique({
+        where: { id },
+        select: { status: true }
+      });
+
+      if (testRecord?.status === 'ineligible_attempt') {
+        return NextResponse.json({ message: 'Cannot evaluate an ineligible attempt' }, { status: 400 });
+      }
+
+      const data = await request.json().catch(() => ({}));
       const { questionId } = data;
 
-      if (!questionId) {
+      if (!questionId || typeof questionId !== 'string' || questionId.trim() === '') {
         return NextResponse.json({ message: 'questionId is required' }, { status: 400 });
       }
 
@@ -111,25 +129,107 @@ export async function POST(
         where: {
           test_id: id,
           question_id: questionId
-        }
+        },
+        include: { question: true }
       });
 
       if (!testResponse) {
         return NextResponse.json({ message: 'Submission not found' }, { status: 404 });
       }
 
+      if (testResponse.question && isEligibilityCategory(testResponse.question.section)) {
+        await prisma.testResponse.update({
+          where: { id: testResponse.id },
+          data: {
+            points_earned: 0,
+            is_correct: null,
+            evaluation_status: 'COMPLETED',
+            ai_evaluation_json: {
+              evaluationStatus: 'COMPLETED',
+              score: 0,
+              feedback: 'Eligibility and logistics questions are unscored.',
+              evaluatedAt: new Date().toISOString()
+            }
+          }
+        });
+
+        await recalculateTestScore(id);
+
+        return NextResponse.json({
+          message: 'Eligibility question is unscored and marked COMPLETED',
+          status: 'COMPLETED'
+        });
+      }
+
+      if (testResponse.question && isPersonalityCategory(testResponse.question.section)) {
+        after(() => {
+          processPersonalityEvaluationsForTest(id).catch(err => {
+            console.error('[Personality Re-evaluation Error]', err);
+          });
+        });
+
+        return NextResponse.json({
+          message: 'Personality qualitative re-evaluation queued',
+          status: 'PROCESSING'
+        });
+      }
+
+      const trimmedAnswer = (testResponse.student_answer || '').trim();
+      if (trimmedAnswer.length === 0) {
+        await prisma.testResponse.update({
+          where: { id: testResponse.id },
+          data: {
+            points_earned: 0,
+            is_correct: false,
+            evaluation_status: 'COMPLETED',
+            ai_evaluation_json: {
+              evaluationStatus: 'COMPLETED',
+              score: 0,
+              feedback: 'No answer provided.',
+              strengths: [],
+              improvements: ['Provide an answer to be evaluated.'],
+              evaluatedAt: new Date().toISOString()
+            }
+          }
+        });
+
+        await prisma.aIEvaluation.updateMany({
+          where: { test_response_id: testResponse.id },
+          data: {
+            obtained_marks: 0,
+            evaluation_status: 'COMPLETED',
+            feedback: 'No answer provided.'
+          }
+        });
+
+        await recalculateTestScore(id);
+
+        return NextResponse.json({
+          message: 'Blank answer graded with 0 marks',
+          status: 'COMPLETED'
+        });
+      }
+
       await prisma.testResponse.update({
         where: { id: testResponse.id },
         data: {
           points_earned: null,
-          ai_evaluation_json: { evaluation_status: 'PENDING', evaluated_at: new Date().toISOString() }
+          evaluation_status: 'PENDING',
+          ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
+        }
+      });
+
+      await prisma.aIEvaluation.updateMany({
+        where: { test_response_id: testResponse.id },
+        data: {
+          evaluation_status: 'PENDING'
         }
       });
 
       after(() => {
         enqueueEvaluationJob(id, [{
           questionId: questionId,
-          studentAnswer: testResponse.student_answer || ''
+          studentAnswer: trimmedAnswer
         }]).catch(err => {
           console.error(`[Re-Evaluation Queue Error]`, err);
         });
@@ -215,11 +315,10 @@ export async function POST(
     }
 
     if (action === 'submit') {
-      if (test.is_completed || test.status === 'submitted' || test.status === 'auto_submitted') {
-        return NextResponse.json({ message: 'Test already submitted' }, { status: 400 });
-      }
-
       const data = await request.json().catch(() => ({}));
+      if (!data.assessmentId && id) {
+        data.assessmentId = id;
+      }
 
       const validationResult = SubmitTestResponseSchema.safeParse(data);
       if (!validationResult.success) {
@@ -232,7 +331,145 @@ export async function POST(
 
       const validatedData = validationResult.data;
 
+      // Load existing responses to have complete candidate responses
+      const existingResponses = await prisma.testResponse.findMany({
+        where: { test_id: test.id },
+        select: { question_id: true, student_answer: true }
+      });
+
+      const eligibility = assessTestAttemptEligibility(
+        test.test_questions,
+        existingResponses,
+        validatedData.responses?.map(r => ({ questionId: r.questionId, answer: r.answer })),
+        {
+          enabled: test.min_attempt_enabled ?? true,
+          minPercentage: test.min_attempt_percentage ?? 60
+        }
+      );
+
+      const targetStatus = eligibility.isEligible ? (validatedData.status || 'submitted') : 'ineligible_attempt';
+
+      // Atomic transition check to prevent duplicate evaluation processing from repeated / concurrent submissions
+      const claimed = await prisma.test.updateMany({
+        where: {
+          id: test.id,
+          is_completed: false,
+          status: 'in_progress'
+        },
+        data: {
+          status: targetStatus,
+          is_completed: true,
+          score: null,
+          end_time: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      if (claimed.count === 0) {
+        return NextResponse.json({ message: 'Test has already been submitted', status: test.status }, { status: 409 });
+      }
+
+      if (!eligibility.isEligible) {
+        if (validatedData.responses && validatedData.responses.length > 0) {
+          for (const response of validatedData.responses) {
+            if (!response.questionId) continue;
+
+            await prisma.testResponse.upsert({
+              where: {
+                test_question_unique: {
+                  test_id: test.id,
+                  question_id: response.questionId
+                }
+              },
+              update: {
+                student_answer: response.answer || '',
+                submitted_at: new Date(),
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: null,
+                ai_evaluation_json: {
+                  evaluationStatus: 'INELIGIBLE_ATTEMPT',
+                  score: null,
+                  reason: `Minimum attempt requirement not met (${eligibility.attemptedCount}/${eligibility.requiredAttempts} required).`,
+                  attemptedCount: eligibility.attemptedCount,
+                  requiredAttempts: eligibility.requiredAttempts,
+                  applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                  evaluatedAt: new Date().toISOString()
+                }
+              },
+              create: {
+                test_id: test.id,
+                question_id: response.questionId,
+                student_answer: response.answer || '',
+                submitted_at: new Date(),
+                started_at: new Date(),
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: null,
+                ai_evaluation_json: {
+                  evaluationStatus: 'INELIGIBLE_ATTEMPT',
+                  score: null,
+                  reason: `Minimum attempt requirement not met (${eligibility.attemptedCount}/${eligibility.requiredAttempts} required).`,
+                  attemptedCount: eligibility.attemptedCount,
+                  requiredAttempts: eligibility.requiredAttempts,
+                  applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+          }
+        }
+
+        await prisma.testAnalytics.upsert({
+          where: { test_id: test.id },
+          update: {
+            total_score: null,
+            overall_percentage: null,
+            overall_ai_marks: null,
+            correct_answers: null,
+            incorrect_answers: null,
+            unanswered: eligibility.applicableQuestionsCount - eligibility.attemptedCount,
+            total_questions: eligibility.applicableQuestionsCount,
+            section_totals: {
+              attemptEligibility: {
+                isEligible: false,
+                attemptedCount: eligibility.attemptedCount,
+                requiredAttempts: eligibility.requiredAttempts,
+                applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                minPercentage: eligibility.minPercentage
+              }
+            }
+          },
+          create: {
+            test_id: test.id,
+            total_score: null,
+            overall_percentage: null,
+            overall_ai_marks: null,
+            correct_answers: null,
+            incorrect_answers: null,
+            unanswered: eligibility.applicableQuestionsCount - eligibility.attemptedCount,
+            total_questions: eligibility.applicableQuestionsCount,
+            section_totals: {
+              attemptEligibility: {
+                isEligible: false,
+                attemptedCount: eligibility.attemptedCount,
+                requiredAttempts: eligibility.requiredAttempts,
+                applicableQuestionsCount: eligibility.applicableQuestionsCount,
+                minPercentage: eligibility.minPercentage
+              }
+            }
+          }
+        });
+
+        return NextResponse.json({
+          message: 'Test submitted. Minimum attempt threshold was not met; answers are not eligible for evaluation.',
+          status: 'ineligible_attempt',
+          isAttemptEligible: false
+        });
+      }
+
       const evalPayloads: any[] = [];
+      let hasPersonalityInSubmission = false;
       const questionMap = new Map();
       if ((test as any).test_questions) {
         (test as any).test_questions.forEach((tq: any) => {
@@ -265,14 +502,108 @@ export async function POST(
           });
 
           const q = questionMap.get(response.questionId);
+
+          // Unscored Eligibility & Logistics questions: NEVER send to AI queue, grade immediately as COMPLETED with 0 marks
+          if (q && isEligibilityCategory(q.section)) {
+            await prisma.testResponse.updateMany({
+              where: { test_id: test.id, question_id: response.questionId },
+              data: {
+                points_earned: 0,
+                is_correct: null,
+                evaluation_status: 'COMPLETED',
+                ai_evaluation_json: {
+                  evaluationStatus: 'COMPLETED',
+                  score: 0,
+                  feedback: 'Eligibility and logistics response recorded.',
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+            continue;
+          }
+
+          // Personality questions: Unscored qualitative evaluation queue
+          if (q && isPersonalityCategory(q.section)) {
+            hasPersonalityInSubmission = true;
+            await prisma.testResponse.updateMany({
+              where: { test_id: test.id, question_id: response.questionId },
+              data: {
+                points_earned: null,
+                is_correct: null,
+                evaluation_status: 'PROCESSING',
+                ai_evaluation_json: {
+                  overviewStatus: 'PROCESSING',
+                  evaluationStatus: 'PROCESSING',
+                  score: null,
+                  evaluatedAt: new Date().toISOString()
+                }
+              }
+            });
+            continue;
+          }
+
           const aiEvaluableTypes = ['coding', 'structured_response', 'open_text'];
           if (q && aiEvaluableTypes.includes(q.type)) {
+            const trimmedAnswer = (response.answer || '').trim();
+            if (trimmedAnswer.length > 0) {
+              evalPayloads.push({
+                testId: test.id,
+                questionId: response.questionId,
+                studentAnswer: response.answer || ''
+              });
+            } else {
+              // Blank answer: grade immediately as 0, COMPLETED without calling OpenRouter
+              await prisma.testResponse.updateMany({
+                where: { test_id: test.id, question_id: response.questionId },
+                data: {
+                  points_earned: 0,
+                  is_correct: false,
+                  evaluation_status: 'COMPLETED',
+                  ai_evaluation_json: {
+                    evaluationStatus: 'COMPLETED',
+                    score: 0,
+                    feedback: 'No answer provided.',
+                    strengths: [],
+                    improvements: ['Provide an answer to be evaluated.'],
+                    evaluatedAt: new Date().toISOString()
+                  }
+                }
+              });
 
-            evalPayloads.push({
-              testId: test.id,
-              questionId: response.questionId,
-              studentAnswer: response.answer || ''
-            });
+              const tr = await prisma.testResponse.findFirst({
+                where: { test_id: test.id, question_id: response.questionId }
+              });
+
+              if (tr) {
+                await prisma.aIEvaluation.upsert({
+                  where: { test_response_id: tr.id },
+                  update: {
+                    obtained_marks: 0,
+                    maximum_marks: q.points || 0,
+                    feedback: 'No answer provided.',
+                    strengths: [],
+                    improvements: ['Provide an answer to be evaluated.'],
+                    evaluation_status: 'COMPLETED',
+                    evaluated_at: new Date()
+                  },
+                  create: {
+                    test_id: test.id,
+                    student_id: test.student_id,
+                    question_id: response.questionId,
+                    section: q.section,
+                    question_type: q.type,
+                    obtained_marks: 0,
+                    maximum_marks: q.points || 0,
+                    feedback: 'No answer provided.',
+                    strengths: [],
+                    improvements: ['Provide an answer to be evaluated.'],
+                    evaluation_status: 'COMPLETED',
+                    evaluated_at: new Date(),
+                    test_response_id: tr.id
+                  }
+                });
+              }
+            }
           } else if (q && q.type === 'ranking') {
             try {
               const studentObj = JSON.parse(response.answer || '{}');
@@ -362,29 +693,35 @@ export async function POST(
       await prisma.test.update({
         where: { id: test.id },
         data: {
-          status: validatedData.status || 'submitted',
-          is_completed: true,
-          end_time: new Date(),
           updated_at: new Date()
         }
       });
 
-      if (evalPayloads.length > 0) {
-        // Set all to PENDING immediately before queueing
-        for (const payload of evalPayloads) {
-          await prisma.testResponse.updateMany({
-            where: { test_id: test.id, question_id: payload.questionId },
-            data: {
-              ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
-            }
-          });
+      if (evalPayloads.length > 0 || hasPersonalityInSubmission) {
+        if (evalPayloads.length > 0) {
+          // Set all to PENDING immediately before queueing
+          for (const payload of evalPayloads) {
+            await prisma.testResponse.updateMany({
+              where: { test_id: test.id, question_id: payload.questionId },
+              data: {
+                ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
+              }
+            });
+          }
         }
 
         try {
           after(() => {
-            enqueueEvaluationJob(test.id, evalPayloads).catch(err => {
-              console.error('[Background Evaluation Error]', err);
-            });
+            if (evalPayloads.length > 0) {
+              enqueueEvaluationJob(test.id, evalPayloads).catch(err => {
+                console.error('[Background Evaluation Error]', err);
+              });
+            }
+            if (hasPersonalityInSubmission) {
+              processPersonalityEvaluationsForTest(test.id).catch(err => {
+                console.error('[Personality Evaluation Error]', err);
+              });
+            }
           });
         } catch (err) {
           console.error('[Queueing Error]', err);

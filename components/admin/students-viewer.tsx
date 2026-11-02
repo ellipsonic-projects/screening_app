@@ -1,18 +1,28 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { useAuth } from '@/context/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { BrandLogo } from '@/components/common/BrandLogo';
-import { ArrowLeft, FileSpreadsheet } from 'lucide-react';
+import { 
+  ArrowLeft,
+  Search, 
+  FileSpreadsheet, 
+  RotateCw, 
+  ArrowUpDown, 
+  ChevronLeft, 
+  ChevronRight, 
+  Loader2, 
+  Users,
+  X,
+  Trophy
+} from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'react-hot-toast';
+import { getCategoryLabel, CATEGORIES, CATEGORY_ORDER } from '@/lib/categories';
 
 interface Student {
   id: string;
@@ -42,7 +52,6 @@ interface TestAttempt {
 }
 
 export function StudentsViewer() {
-  const { logout } = useAuth();
   const router = useRouter();
 
   // Active Tab: 'students' | 'attempts'
@@ -55,14 +64,25 @@ export function StudentsViewer() {
   const [branches, setBranches] = useState<any[]>([]);
 
   // Filters State
-  const [selectedBranch, setSelectedBranch] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBranch, setSelectedBranch] = useState('all');
 
-  // Selected Student Details Modal
+  // Sorting State
+  const [sortField, setSortField] = useState<string>('fullName');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Pagination State (Fixed 10 per page)
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Selection State (for Registered Students)
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+
+  // UI Modals
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedStudentHistory, setSelectedStudentHistory] = useState<any[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  
   // Round 2 Publish Modal State
   const [isRound2ModalOpen, setIsRound2ModalOpen] = useState(false);
   const [availableQuestions, setAvailableQuestions] = useState<any[]>([]);
@@ -74,14 +94,15 @@ export function StudentsViewer() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleViewCodingAnswers = (testId: string) => {
-    router.push(`/admin/results/${testId}`);
-  };
-
   useEffect(() => {
     fetchBranches();
     loadData();
   }, []);
+
+  // Reset to page 1 whenever filters or tab change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedBranch, activeTab]);
 
   const fetchBranches = async () => {
     try {
@@ -97,22 +118,28 @@ export function StudentsViewer() {
     try {
       const token = localStorage.getItem('token');
       
-      // Load registered students
-      const studentsRes = await axios.get('/api/admin/students?limit=1000', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setStudents(studentsRes.data.students || []);
+      const [studentsRes, evaluationRes] = await Promise.all([
+        axios.get('/api/admin/students?limit=1000', {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => ({ data: { students: [] } })),
+        axios.get('/api/admin/evaluation', {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => ({ data: { tests: [] } }))
+      ]);
 
-      // Load live attempts/evaluations
-      const evaluationRes = await axios.get('/api/admin/evaluation', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      setStudents(studentsRes.data.students || []);
       setAttempts(evaluationRes.data.tests || []);
+      toast.success('Directory updated', { id: 'feed-refreshed', duration: 1500 });
     } catch (error) {
       console.error('[Load Dashboard Data Error]', error);
+      toast.error('Failed to load students directory');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleViewCodingAnswers = (testId: string) => {
+    router.push(`/admin/results/${testId}`);
   };
 
   const handleOpenHistory = async (student: Student) => {
@@ -120,30 +147,256 @@ export function StudentsViewer() {
     setIsHistoryLoading(true);
     try {
       const token = localStorage.getItem('token');
-      // Fetch evaluations which contains all test assignments
       const evaluationRes = await axios.get('/api/admin/evaluation', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const allAttempts = evaluationRes.data.tests || [];
-      // Filter attempts belonging to this student by email or name/USN matching
       const studentHistory = allAttempts.filter(
-        (t: any) => t.usn === student.usn || t.email === student.email
+        (a: any) => a.usn === student.usn || a.email === student.email
       );
       setSelectedStudentHistory(studentHistory);
     } catch (e) {
-      console.error('Failed to load history', e);
+      console.error('Failed to load student history', e);
+      toast.error('Could not load student test history');
     } finally {
       setIsHistoryLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    router.push('/auth/login');
+  const handleExportExcel = async () => {
+    try {
+      setIsExporting(true);
+      const token = localStorage.getItem('token');
+      toast.loading('Preparing Excel...', { id: 'export-excel' });
+      
+      const response = await axios.get('/api/admin/export/excel', {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+      
+      toast.success('Downloaded Student Directory Excel', { id: 'export-excel' });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Student_Assessment_Results_${new Date().toISOString().split('T')[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed', error);
+      toast.error('Failed to export data to Excel.', { id: 'export-excel' });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
-  const toggleStudentSelection = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Helper to determine single student's status text & latest attempt
+  const getStudentStatusInfo = (student: Student) => {
+    const latestAttempt = attempts.find(a => a.usn === student.usn || a.email === student.email);
+    let statusKey = 'NOT_STARTED';
+    let statusLabel = 'NOT STARTED';
+    let badgeClass = 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]';
+
+    if (latestAttempt) {
+      const s = (latestAttempt.status || '').toLowerCase();
+      if (s === 'submitted' || s === 'evaluated') {
+        statusKey = 'COMPLETED';
+        statusLabel = 'COMPLETED';
+        badgeClass = 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]';
+      } else if (s === 'auto_submitted') {
+        statusKey = 'AUTO_SUBMITTED';
+        statusLabel = 'AUTO SUBMITTED';
+        badgeClass = 'bg-[#FEF3C7] text-[#B45309] border-[#FDE68A]';
+      } else if (s === 'in_progress') {
+        statusKey = 'IN_PROGRESS';
+        statusLabel = 'IN PROGRESS';
+        badgeClass = 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]';
+      } else if (s === 'evaluation_failed') {
+        statusKey = 'EVALUATION_FAILED';
+        statusLabel = 'EVALUATION FAILED';
+        badgeClass = 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]';
+      } else {
+        statusKey = s.toUpperCase();
+        statusLabel = s.toUpperCase().replace(/_/g, ' ');
+        badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+      }
+    }
+
+    return {
+      latestAttempt,
+      statusKey,
+      statusLabel,
+      badgeClass,
+      score: latestAttempt && latestAttempt.score !== null ? latestAttempt.score : null
+    };
+  };
+
+  // Helper to get formatted status for an attempt record
+  const getAttemptStatusInfo = (attempt: TestAttempt) => {
+    const s = (attempt.status || '').toLowerCase();
+    if (s === 'submitted' || s === 'evaluated') {
+      return {
+        label: 'COMPLETED',
+        badgeClass: 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]'
+      };
+    } else if (s === 'auto_submitted') {
+      return {
+        label: 'AUTO SUBMITTED',
+        badgeClass: 'bg-[#FEF3C7] text-[#B45309] border-[#FDE68A]'
+      };
+    } else if (s === 'in_progress') {
+      return {
+        label: 'IN PROGRESS',
+        badgeClass: 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]'
+      };
+    } else if (s === 'evaluation_failed') {
+      return {
+        label: 'EVALUATION FAILED',
+        badgeClass: 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]'
+      };
+    } else {
+      return {
+        label: s.toUpperCase().replace(/_/g, ' '),
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
+      };
+    }
+  };
+
+  // Filtering Logic: Registered Students
+  const filteredStudents = useMemo(() => {
+    const searchLower = searchQuery.toLowerCase().trim();
+
+    return students.filter(student => {
+      const matchesSearch = !searchLower || 
+        (student.fullName || '').toLowerCase().includes(searchLower) ||
+        (student.usn || '').toLowerCase().includes(searchLower) ||
+        (student.email || '').toLowerCase().includes(searchLower) ||
+        (student.college || '').toLowerCase().includes(searchLower);
+
+      const matchesBranch = selectedBranch === 'all' || student.branch === selectedBranch;
+
+      return matchesSearch && matchesBranch;
+    });
+  }, [students, searchQuery, selectedBranch]);
+
+  // Filtering Logic: Attempts & Submissions
+  const filteredAttempts = useMemo(() => {
+    const searchLower = searchQuery.toLowerCase().trim();
+
+    return attempts.filter(attempt => {
+      const matchesSearch = !searchLower ||
+        (attempt.fullName || '').toLowerCase().includes(searchLower) || 
+        (attempt.usn || '').toLowerCase().includes(searchLower) ||
+        (attempt.email || '').toLowerCase().includes(searchLower);
+
+      const matchesBranch = selectedBranch === 'all' || attempt.branch === selectedBranch;
+
+      return matchesSearch && matchesBranch;
+    });
+  }, [attempts, searchQuery, selectedBranch]);
+
+  // Sorting Logic: Registered Students
+  const sortedStudents = useMemo(() => {
+    const sorted = [...filteredStudents];
+    sorted.sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+
+      if (sortField === 'fullName') {
+        aVal = a.fullName || '';
+        bVal = b.fullName || '';
+      } else if (sortField === 'usn') {
+        aVal = a.usn || '';
+        bVal = b.usn || '';
+      } else if (sortField === 'branch') {
+        aVal = a.branch || '';
+        bVal = b.branch || '';
+      } else if (sortField === 'email') {
+        aVal = a.email || '';
+        bVal = b.email || '';
+      } else if (sortField === 'college') {
+        aVal = a.college || '';
+        bVal = b.college || '';
+      } else if (sortField === 'status') {
+        aVal = getStudentStatusInfo(a).statusKey;
+        bVal = getStudentStatusInfo(b).statusKey;
+      } else if (sortField === 'score') {
+        aVal = getStudentStatusInfo(a).score ?? -1;
+        bVal = getStudentStatusInfo(b).score ?? -1;
+      }
+
+      if (typeof aVal === 'string') {
+        const cmp = aVal.localeCompare(bVal);
+        return sortDirection === 'asc' ? cmp : -cmp;
+      } else {
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+    });
+    return sorted;
+  }, [filteredStudents, attempts, sortField, sortDirection]);
+
+  // Sorting Logic: Attempts & Submissions
+  const sortedAttempts = useMemo(() => {
+    const sorted = [...filteredAttempts];
+    sorted.sort((a, b) => {
+      let aVal: any = '';
+      let bVal: any = '';
+
+      if (sortField === 'fullName') {
+        aVal = a.fullName || '';
+        bVal = b.fullName || '';
+      } else if (sortField === 'branch') {
+        aVal = a.branch || '';
+        bVal = b.branch || '';
+      } else if (sortField === 'score') {
+        aVal = a.score ?? -1;
+        bVal = b.score ?? -1;
+      } else if (sortField === 'createdAt') {
+        aVal = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        bVal = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      } else if (sortField === 'submittedAt') {
+        aVal = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+        bVal = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+      } else if (sortField === 'status') {
+        aVal = a.status || '';
+        bVal = b.status || '';
+      }
+
+      if (typeof aVal === 'string') {
+        const cmp = aVal.localeCompare(bVal);
+        return sortDirection === 'asc' ? cmp : -cmp;
+      } else {
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+    });
+    return sorted;
+  }, [filteredAttempts, sortField, sortDirection]);
+
+  // Active dataset based on selected tab
+  const totalFilteredCount = activeTab === 'students' ? sortedStudents.length : sortedAttempts.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+  const endIndex = Math.min(startIndex + PAGE_SIZE, totalFilteredCount);
+
+  const paginatedStudents = useMemo(() => {
+    return sortedStudents.slice(startIndex, endIndex);
+  }, [sortedStudents, startIndex, endIndex]);
+
+  const paginatedAttempts = useMemo(() => {
+    return sortedAttempts.slice(startIndex, endIndex);
+  }, [sortedAttempts, startIndex, endIndex]);
+
+  // Current Page Select All logic for Registered Students
+  const isCurrentPageAllSelected = 
+    paginatedStudents.length > 0 && 
+    paginatedStudents.every(s => selectedStudentIds.has(s.id));
+
+  const toggleStudentSelection = (id: string, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
     const newSelection = new Set(selectedStudentIds);
     if (newSelection.has(id)) {
       newSelection.delete(id);
@@ -153,6 +406,41 @@ export function StudentsViewer() {
     setSelectedStudentIds(newSelection);
   };
 
+  const togglePageSelection = () => {
+    const newSelection = new Set(selectedStudentIds);
+    if (isCurrentPageAllSelected) {
+      paginatedStudents.forEach(s => newSelection.delete(s.id));
+    } else {
+      paginatedStudents.forEach(s => newSelection.add(s.id));
+    }
+    setSelectedStudentIds(newSelection);
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getPageNumbers = (current: number, total: number): (number | '...')[] => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    const pages: (number | '...')[] = [];
+    if (current <= 4) {
+      pages.push(1, 2, 3, 4, 5, '...', total);
+    } else if (current >= total - 3) {
+      pages.push(1, '...', total - 4, total - 3, total - 2, total - 1, total);
+    } else {
+      pages.push(1, '...', current - 1, current, current + 1, '...', total);
+    }
+    return pages;
+  };
+
+  // Round 2 Modal Handlers
   const openRound2Modal = async () => {
     if (selectedStudentIds.size === 0) return;
     setIsRound2ModalOpen(true);
@@ -193,88 +481,35 @@ export function StudentsViewer() {
 
   const submitRound2Publish = async () => {
     if (selectedRound2QuestionIds.size === 0) {
-      toast.error('Please select at least one question for the test.');
+      toast.error('Please select at least 1 question.');
       return;
     }
-    if (round2Duration <= 0) {
-      toast.error('Please enter a valid test duration.');
-      return;
-    }
-    if (!confirm(`Publish Round 2 Test for ${selectedStudentIds.size} student(s) with ${selectedRound2QuestionIds.size} question(s)?`)) return;
-    
-    setIsPublishing(true);
     try {
+      setIsPublishing(true);
       const token = localStorage.getItem('token');
-      await axios.post('/api/admin/tests/publish-round-2', 
-        { 
-          studentIds: Array.from(selectedStudentIds),
-          questionIds: Array.from(selectedRound2QuestionIds),
-          totalDuration: round2Duration
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success('Round 2 tests successfully generated!');
+      const payload = {
+        studentIds: Array.from(selectedStudentIds),
+        questionIds: Array.from(selectedRound2QuestionIds),
+        totalDuration: round2Duration,
+        durationMinutes: round2Duration,
+        testTitle: 'Round 2 Technical Interview Assessment'
+      };
+
+      await axios.post('/api/admin/tests/publish-round-2', payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      toast.success(`Successfully published Round 2 to ${selectedStudentIds.size} student(s)!`);
       setIsRound2ModalOpen(false);
       setSelectedStudentIds(new Set());
       loadData();
-    } catch (error: any) {
-      console.error('[Publish Round 2 Error]', error);
-      toast.error(error.response?.data?.message || 'Failed to publish Round 2 tests');
+    } catch (err: any) {
+      console.error('Publish error', err);
+      toast.error(err.response?.data?.message || 'Failed to publish Round 2 assessment.');
     } finally {
       setIsPublishing(false);
     }
   };
-
-  const handleExportExcel = async () => {
-    try {
-      setIsExporting(true);
-      const token = localStorage.getItem('token');
-      toast.loading('Preparing Excel...', { id: 'export-excel' });
-      
-      const response = await axios.get('/api/admin/export/excel', {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: 'blob'
-      });
-      
-      toast.success('Downloading...', { id: 'export-excel' });
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Student_Assessment_Results_${new Date().toISOString().split('T')[0]}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Export failed', error);
-      toast.error('Failed to export data to Excel.', { id: 'export-excel' });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  // Local filtering & search logic for students
-  const filteredStudents = students.filter(s => {
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = searchQuery === '' || 
-                          (s.fullName || 'Unknown').toLowerCase().includes(searchLower) || 
-                          (s.usn || '').toLowerCase().includes(searchLower) ||
-                          (s.email || '').toLowerCase().includes(searchLower);
-    const matchesBranch = selectedBranch === 'all' || s.branch === selectedBranch;
-    return matchesSearch && matchesBranch;
-  });
-
-  // Local filtering & search logic for attempts
-  const filteredAttempts = attempts.filter(a => {
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = searchQuery === '' ||
-                          (a.fullName || 'Unknown').toLowerCase().includes(searchLower) || 
-                          (a.usn || '').toLowerCase().includes(searchLower) ||
-                          (a.email || '').toLowerCase().includes(searchLower);
-    const matchesBranch = selectedBranch === 'all' || a.branch === selectedBranch;
-    return matchesSearch && matchesBranch;
-  });
 
   const filteredQuestions = availableQuestions.filter(q => 
     q.question_text?.toLowerCase().includes(questionSearchQuery.toLowerCase()) &&
@@ -282,64 +517,133 @@ export function StudentsViewer() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Navbar */}
-      <nav className="bg-white border-b border-slate-200/80 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/admin/dashboard" className="hover:opacity-90 transition flex items-center">
+    <div className="min-h-screen bg-[#F3F7FD] relative overflow-x-hidden text-[#10234E] flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900">
+      
+      {/* Decorative SVG Curves Canvas */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
+        <div 
+          className="absolute inset-0" 
+          style={{
+            background: 'radial-gradient(circle at 50% 40%, #F7FAFE 0%, #EEF5FD 55%, #E6F1FC 100%)'
+          }}
+        />
+
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 1440 900"
+          fill="none"
+          preserveAspectRatio="xMidYMid slice"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient id="sdTopRightGrad" x1="1440" y1="0" x2="880" y2="400" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#BCDDFC" stopOpacity="0.8" />
+              <stop offset="50%" stopColor="#D2E8FD" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#EAF3FD" stopOpacity="0" />
+            </linearGradient>
+
+            <linearGradient id="sdBottomLeftGrad" x1="0" y1="500" x2="600" y2="900" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#CCE4FD" stopOpacity="0.6" />
+              <stop offset="60%" stopColor="#E2F0FE" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#F3F8FD" stopOpacity="0" />
+            </linearGradient>
+
+            <linearGradient id="sdBottomWaveGrad" x1="0" y1="700" x2="1440" y2="850" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#BDDCFC" stopOpacity="0.5" />
+              <stop offset="50%" stopColor="#D0E6FD" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#E4F1FE" stopOpacity="0.2" />
+            </linearGradient>
+          </defs>
+
+          <path d="M1440 0 L 980 0 C 980 160, 1120 320, 1440 370 Z" fill="url(#sdTopRightGrad)" />
+          <path d="M0 900 L 0 540 C 220 540, 440 680, 560 900 Z" fill="url(#sdBottomLeftGrad)" />
+          <path d="M0 760 C 350 780, 720 730, 1080 670 C 1240 645, 1370 675, 1440 705 L 1440 900 L 0 900 Z" fill="url(#sdBottomWaveGrad)" />
+        </svg>
+      </div>
+
+      {/* Top Header Bar Matching Reference UI */}
+      <header className="bg-white/95 backdrop-blur-xs border-b border-slate-200/80 sticky top-0 z-40 shadow-2xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between w-full">
+          {/* Left: Brand Logo & DIRECTORY Pill Badge */}
+          <div className="flex items-center gap-2.5">
+            <Link href="/admin/dashboard" className="flex items-center gap-2 hover:opacity-90 transition">
               <BrandLogo size="md" className="items-start flex-row items-center" />
             </Link>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold ml-1 uppercase tracking-wider hidden sm:inline-block">
-              Directory
+            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold uppercase tracking-wider hidden sm:inline-block border border-slate-200/60">
+              DIRECTORY
             </span>
           </div>
-          <div>
+
+          {/* Right: Actions and Dashboard Navigation */}
+          <div className="flex items-center gap-2">
+            <Link href="/admin/shortlist">
+              <Button 
+                variant="outline" 
+                className="text-xs bg-[#EEF5FF] hover:bg-[#DBEAFE] text-[#1760FF] font-bold px-3.5 py-1.5 rounded-lg transition flex items-center border border-[#BFDBFE] shadow-2xs cursor-pointer"
+              >
+                <Trophy className="w-3.5 h-3.5 mr-1.5 text-[#1760FF]" /> Shortlist & Rank
+              </Button>
+            </Link>
+
             <Link href="/admin/dashboard">
-              <Button variant="outline" className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-lg transition flex items-center border-none">
-                <ArrowLeft className="w-4 h-4 mr-2" /> Dashboard
+              <Button 
+                variant="outline" 
+                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3.5 py-1.5 rounded-lg transition flex items-center border-none shadow-2xs cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> Dashboard
               </Button>
             </Link>
           </div>
         </div>
-      </nav>
+      </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      {/* Main Full-Width Content Container (No Sidebar, expanded to full width) */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-4 w-full flex-1 relative z-10">
+        
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-250">
+        <div className="flex border-b border-slate-200/80">
           <button
             onClick={() => setActiveTab('students')}
-            className={`py-3.5 px-6 font-bold border-b-2 text-xs uppercase tracking-wider transition ${
-              activeTab === 'students' ? 'border-blue-900 text-blue-900' : 'border-transparent text-slate-400 hover:text-slate-700'
+            className={`py-3 px-5 font-bold border-b-2 text-xs uppercase tracking-wider transition cursor-pointer ${
+              activeTab === 'students' 
+                ? 'border-[#1760FF] text-[#1760FF]' 
+                : 'border-transparent text-slate-400 hover:text-slate-700'
             }`}
           >
-            Registered Students ({filteredStudents.length})
+            REGISTERED STUDENTS ({filteredStudents.length})
           </button>
           <button
             onClick={() => setActiveTab('attempts')}
-            className={`py-3.5 px-6 font-bold border-b-2 text-xs uppercase tracking-wider transition ${
-              activeTab === 'attempts' ? 'border-blue-900 text-blue-900' : 'border-transparent text-slate-400 hover:text-slate-700'
+            className={`py-3 px-5 font-bold border-b-2 text-xs uppercase tracking-wider transition cursor-pointer ${
+              activeTab === 'attempts' 
+                ? 'border-[#1760FF] text-[#1760FF]' 
+                : 'border-transparent text-slate-400 hover:text-slate-700'
             }`}
           >
-            Attempts & Submissions ({filteredAttempts.length})
+            ATTEMPTS & SUBMISSIONS ({filteredAttempts.length})
           </button>
         </div>
-        {/* Controls/Filters Bar */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex flex-1 flex-wrap items-center gap-3">
-            <div className="w-full md:w-80">
+
+        {/* Search and Filter Toolbar */}
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center md:justify-between gap-2.5">
+          {/* Left Controls: Search + Branch Filter */}
+          <div className="flex flex-1 flex-wrap items-center gap-2.5">
+            {/* Search by name, USN, or college */}
+            <div className="relative w-full sm:w-80">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <Input
                 placeholder="Search by student name or USN..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 border-slate-200 focus:bg-white"
+                className="w-full pl-8.5 h-8.5 bg-slate-50/70 border-slate-200 rounded-lg text-xs focus:bg-white focus:border-blue-500 transition"
               />
             </div>
-            
+
+            {/* Branch Filter */}
             <select
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              className="px-3.5 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:bg-white"
+              className="h-8.5 px-3 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50/70 text-slate-700 font-medium focus:bg-white focus:border-blue-500 transition outline-none cursor-pointer"
             >
               <option value="all">All Branches</option>
               {branches.map(b => (
@@ -347,111 +651,228 @@ export function StudentsViewer() {
               ))}
             </select>
           </div>
-          <div className="flex gap-3 shrink-0 mt-3 md:mt-0 items-center">
+
+          {/* Right Controls: Actions */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 md:pt-0 border-t md:border-t-0 border-slate-100">
             {activeTab === 'students' && selectedStudentIds.size > 0 && (
               <Button 
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm transition"
+                className="bg-[#1760FF] hover:bg-blue-700 text-white font-bold h-8.5 px-3 rounded-lg text-xs shadow-2xs transition cursor-pointer"
                 onClick={openRound2Modal}
               >
-                Configure Round 2 Test
+                Configure Round 2 ({selectedStudentIds.size})
               </Button>
             )}
+
             <Button 
               variant="outline" 
-              className="border-slate-200 hover:bg-slate-50 flex items-center text-slate-700" 
+              className="h-8.5 border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-3 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs" 
               onClick={handleExportExcel}
               disabled={isExporting}
             >
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              {isExporting ? 'Exporting...' : 'Export to Excel'}
+              <FileSpreadsheet className="w-3.5 h-3.5 text-[#1760FF]" />
+              <span>{isExporting ? 'Exporting...' : 'Export to Excel'}</span>
             </Button>
-            <Button variant="outline" className="border-slate-200 hover:bg-slate-50" onClick={loadData}>
-              Refresh Feed
+
+            <Button 
+              variant="outline" 
+              className="h-8.5 border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold px-3 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs" 
+              onClick={loadData}
+              disabled={isLoading}
+            >
+              <RotateCw className={`w-3.5 h-3.5 text-[#1760FF] ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Feed</span>
             </Button>
           </div>
         </div>
 
-        {/* Dynamic Views */}
-        {activeTab === 'students' ? (
-          <Card className="border border-slate-150 shadow-sm rounded-2xl overflow-hidden bg-white">
-            <CardContent className="p-0">
-              <div className="w-full overflow-x-auto">
-                <Table>
-                <TableHeader className="bg-slate-50/70 border-b border-slate-100">
-                  <TableRow>
-                    <TableHead className="w-12 text-center"></TableHead>
-                    <TableHead className="font-semibold text-slate-700">Student Name</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-36">USN</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-40">Branch</TableHead>
-                    <TableHead className="font-semibold text-slate-700">Email</TableHead>
-                    <TableHead className="font-semibold text-slate-700 max-w-[150px]">College</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-32 text-center">Test Status</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-28 text-center">Score</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-32 text-center">Answer</TableHead>
+        {/* Tab 1: Registered Students Table */}
+        {activeTab === 'students' && (
+          <div className="bg-white rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            <div className="w-full overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-slate-50/80 border-b border-slate-200/80">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10 text-center py-2 px-2">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                        checked={isCurrentPageAllSelected}
+                        onChange={togglePageSelection}
+                        aria-label="Select all students on current page"
+                      />
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 cursor-pointer select-none"
+                      onClick={() => handleSort('fullName')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Student Name</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-32 cursor-pointer select-none"
+                      onClick={() => handleSort('usn')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>USN</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-24 cursor-pointer select-none"
+                      onClick={() => handleSort('branch')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Branch</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 cursor-pointer select-none"
+                      onClick={() => handleSort('email')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Email</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 max-w-[180px] cursor-pointer select-none"
+                      onClick={() => handleSort('college')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>College</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-36 text-center cursor-pointer select-none"
+                      onClick={() => handleSort('status')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Test Status</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-28 text-center cursor-pointer select-none"
+                      onClick={() => handleSort('score')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Score</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-28 text-center">
+                      Answer
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12 text-slate-400">Loading student profiles...</TableCell>
+                      <TableCell colSpan={9} className="text-center py-12 text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Loader2 className="w-5 h-5 animate-spin text-[#1760FF]" />
+                          <p className="text-xs font-medium">Loading student directory...</p>
+                        </div>
+                      </TableCell>
                     </TableRow>
-                  ) : filteredStudents.length === 0 ? (
+                  ) : paginatedStudents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12 text-slate-400">No students registered yet</TableCell>
+                      <TableCell colSpan={9} className="text-center py-12 text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <Users className="w-7 h-7 text-slate-300 mb-1" />
+                          <p className="text-sm font-semibold text-slate-700">No students found</p>
+                          <p className="text-xs text-slate-400">
+                            {searchQuery || selectedBranch !== 'all'
+                              ? 'No records match your active search and filter criteria.'
+                              : 'No students registered in the directory yet.'}
+                          </p>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ) : (
-                    filteredStudents.map(student => {
-                      const latestAttempt = attempts.find(a => a.usn === student.usn || a.email === student.email);
-                      
-                      let statusText = 'No Attempt';
-                      if (latestAttempt) {
-                        statusText = latestAttempt.status === 'submitted' || latestAttempt.status === 'evaluated' ? 'Completed' : (latestAttempt.status === 'auto_submitted' ? 'Auto Submitted' : latestAttempt.status);
-                      }
+                    paginatedStudents.map(student => {
+                      const { latestAttempt, statusLabel, badgeClass, score } = getStudentStatusInfo(student);
+                      const isSelected = selectedStudentIds.has(student.id);
 
                       return (
                         <TableRow 
                           key={student.id} 
                           onClick={() => handleOpenHistory(student)}
-                          className="hover:bg-slate-50/70 transition border-b border-slate-100 last:border-b-0 cursor-pointer text-xs"
+                          className={`transition border-b border-slate-100 last:border-b-0 cursor-pointer ${
+                            isSelected ? 'bg-blue-50/40 hover:bg-blue-50/60' : 'hover:bg-slate-50/60'
+                          }`}
                         >
-                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                          {/* Checkbox selection */}
+                          <TableCell className="text-center py-2.5 px-2" onClick={(e) => e.stopPropagation()}>
                             <input 
                               type="checkbox" 
-                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                              checked={selectedStudentIds.has(student.id)}
-                              onChange={(e) => toggleStudentSelection(student.id, e as any)}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                              checked={isSelected}
+                              onChange={(e) => toggleStudentSelection(student.id, e)}
                             />
                           </TableCell>
-                          <TableCell className="font-bold text-slate-800">{student.fullName}</TableCell>
-                          <TableCell className="w-36 font-mono text-slate-600">{student.usn}</TableCell>
-                          <TableCell className="w-40 text-slate-600 font-medium">{student.branch}</TableCell>
-                          <TableCell className="text-slate-600">{student.email}</TableCell>
-                          <TableCell className="text-slate-600 truncate max-w-[150px]">{student.college}</TableCell>
-                          
-                          <TableCell className="w-32 text-center">
-                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                              statusText === 'Completed' ? 'bg-emerald-50 text-emerald-700' :
-                              statusText === 'No Attempt' ? 'bg-slate-100 text-slate-500' :
-                              'bg-amber-50 text-amber-700'
-                            }`}>
-                              {statusText}
+
+                          {/* Student Name */}
+                          <TableCell className="py-2.5 px-3 font-bold text-[#10234E] text-xs">
+                            {student.fullName}
+                          </TableCell>
+
+                          {/* USN */}
+                          <TableCell className="w-32 py-2.5 px-3 font-mono text-slate-600 text-xs">
+                            {student.usn}
+                          </TableCell>
+
+                          {/* Branch */}
+                          <TableCell className="w-24 py-2.5 px-3 text-slate-700 font-semibold text-xs uppercase">
+                            {student.branch}
+                          </TableCell>
+
+                          {/* Email */}
+                          <TableCell className="py-2.5 px-3 text-slate-600 text-xs">
+                            {student.email}
+                          </TableCell>
+
+                          {/* College */}
+                          <TableCell className="py-2.5 px-3 text-slate-600 text-xs max-w-[180px] truncate" title={student.college}>
+                            {student.college || '—'}
+                          </TableCell>
+
+                          {/* Test Status Badge */}
+                          <TableCell className="w-36 py-2.5 px-3 text-center">
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeClass}`}>
+                              {statusLabel}
                             </span>
                           </TableCell>
-                          
-                          <TableCell className="w-28 text-center font-bold text-indigo-600 font-mono">
-                            {latestAttempt && latestAttempt.score !== null ? `${latestAttempt.score} Pts` : 'N/A'}
+
+                          {/* Score */}
+                          <TableCell className="w-28 py-2.5 px-3 text-center font-mono">
+                            {score !== null ? (
+                              <span className="text-[#1760FF] font-bold text-xs">{score} Pts</span>
+                            ) : (
+                              <span className="text-slate-400 font-semibold text-xs">--</span>
+                            )}
                           </TableCell>
-                          
-                          <TableCell className="w-32 text-center" onClick={(e) => e.stopPropagation()}>
+
+                          {/* View Answer CTA */}
+                          <TableCell className="w-28 py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                             {latestAttempt ? (
                               <button
                                 onClick={() => handleViewCodingAnswers(latestAttempt.id)}
-                                className="text-[11px] bg-slate-50 border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-200 font-bold px-3 py-1 rounded transition"
+                                className="h-7 px-3 text-[11px] font-bold rounded-lg border border-blue-200 bg-blue-50/60 hover:bg-blue-100 text-[#1760FF] transition cursor-pointer shadow-2xs"
                               >
                                 View Answer
                               </button>
                             ) : (
-                              <span className="text-[11px] text-slate-400 font-semibold italic">No Submission</span>
+                              <button
+                                onClick={() => handleOpenHistory(student)}
+                                className="h-7 px-3 text-[11px] font-medium rounded-lg text-slate-400 hover:text-slate-600 transition"
+                              >
+                                View Details
+                              </button>
                             )}
                           </TableCell>
                         </TableRow>
@@ -459,41 +880,173 @@ export function StudentsViewer() {
                     })
                   )}
                 </TableBody>
-                </Table>
+              </Table>
+            </div>
+
+            {/* Pagination Controls & Range Footer */}
+            <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-slate-600">
+              <div className="flex items-center gap-2 font-medium text-xs">
+                <span>
+                  {totalFilteredCount === 0 ? (
+                    `Showing 0 of ${students.length} students`
+                  ) : (
+                    `Showing ${startIndex + 1} – ${endIndex} of ${totalFilteredCount} students`
+                  )}
+                </span>
+                {selectedStudentIds.size > 0 && (
+                  <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-[11px]">
+                    {selectedStudentIds.size} selected
+                  </span>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          /* Live attempts view */
-          <Card className="border border-slate-150 shadow-sm rounded-2xl overflow-hidden bg-white">
-            <CardContent className="p-0">
-              <div className="w-full overflow-x-auto">
-                <Table>
-                <TableHeader className="bg-slate-50/70 border-b border-slate-100">
-                  <TableRow>
-                    <TableHead className="font-semibold text-slate-700">Student Name</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-28">Branch</TableHead>
-                    <TableHead className="font-semibold text-slate-700">Test Name</TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-center w-32">Marks Obtained</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-36">Start Time</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-36">Submission Time</TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-center w-28">Time Taken</TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-center w-36">Status</TableHead>
+
+              {/* Navigation Buttons */}
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="h-7 px-2.5 text-xs border-slate-200 rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white cursor-pointer"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 mr-0.5" /> Previous
+                </Button>
+
+                <div className="flex items-center gap-1">
+                  {getPageNumbers(safeCurrentPage, totalPages).map((p, idx) => (
+                    p === '...' ? (
+                      <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 select-none text-xs">…</span>
+                    ) : (
+                      <button
+                        key={`page-${p}`}
+                        onClick={() => setCurrentPage(Number(p))}
+                        className={`h-7 min-w-[28px] px-2 rounded-md font-semibold text-xs transition cursor-pointer ${
+                          safeCurrentPage === p 
+                            ? 'bg-[#1760FF] text-white shadow-2xs font-bold' 
+                            : 'text-slate-600 hover:bg-slate-200/70'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safeCurrentPage >= totalPages || totalFilteredCount === 0}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="h-7 px-2.5 text-xs border-slate-200 rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white cursor-pointer"
+                  aria-label="Next page"
+                >
+                  Next <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Attempts & Submissions Table */}
+        {activeTab === 'attempts' && (
+          <div className="bg-white rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            <div className="w-full overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-slate-50/80 border-b border-slate-200/80">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 cursor-pointer select-none"
+                      onClick={() => handleSort('fullName')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Candidate Name</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-28 cursor-pointer select-none"
+                      onClick={() => handleSort('branch')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Branch</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3">
+                      Assessment
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-28 text-center cursor-pointer select-none"
+                      onClick={() => handleSort('score')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Score</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-36 cursor-pointer select-none"
+                      onClick={() => handleSort('createdAt')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Start Time</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-36 cursor-pointer select-none"
+                      onClick={() => handleSort('submittedAt')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Submission Time</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-28 text-center">
+                      Time Taken
+                    </TableHead>
+                    <TableHead 
+                      className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-36 text-center cursor-pointer select-none"
+                      onClick={() => handleSort('status')}
+                    >
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Status</span>
+                        <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </TableHead>
+                    <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-28 text-center">
+                      Action
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12 text-slate-400">Loading live attempts feed...</TableCell>
+                      <TableCell colSpan={9} className="text-center py-12 text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Loader2 className="w-5 h-5 animate-spin text-[#1760FF]" />
+                          <p className="text-xs font-medium">Loading attempts feed...</p>
+                        </div>
+                      </TableCell>
                     </TableRow>
-                  ) : filteredAttempts.length === 0 ? (
+                  ) : paginatedAttempts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12 text-slate-400">No test attempts recorded yet</TableCell>
+                      <TableCell colSpan={9} className="text-center py-12 text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <Users className="w-7 h-7 text-slate-300 mb-1" />
+                          <p className="text-sm font-semibold text-slate-700">No test attempts recorded yet</p>
+                          <p className="text-xs text-slate-400">
+                            {searchQuery || selectedBranch !== 'all'
+                              ? 'No attempts match your active search and filter criteria.'
+                              : 'No test attempts have been started yet.'}
+                          </p>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ) : (
-                    filteredAttempts.map(attempt => {
-                      const testName = "TEST";
-                      
+                    paginatedAttempts.map(attempt => {
+                      const testName = `Recruitment Assessment – ${attempt.branch || 'General'}`;
                       let timeTakenText = 'N/A';
                       if (attempt.submittedAt) {
                         const start = attempt.createdAt ? new Date(attempt.createdAt).getTime() : 0;
@@ -504,136 +1057,213 @@ export function StudentsViewer() {
                         }
                       }
 
-                      const displayStatus = attempt.status === 'auto_submitted' ? 'Auto Submitted' : 
-                                            (attempt.status === 'submitted' || attempt.status === 'evaluated') ? 'Completed' : attempt.status;
+                      const { label: statusLabel, badgeClass } = getAttemptStatusInfo(attempt);
+                      const isFinished = attempt.status === 'submitted' || attempt.status === 'evaluated' || attempt.status === 'auto_submitted';
 
                       return (
-                        <TableRow key={attempt.id} className="hover:bg-slate-50/50 transition border-b border-slate-100 last:border-b-0 text-xs">
-                          <TableCell className="font-bold text-slate-800">{attempt.fullName || 'N/A'}</TableCell>
-                          <TableCell className="w-28 text-slate-650 font-medium">{attempt.branch}</TableCell>
-                          <TableCell className="font-semibold text-slate-700">{testName}</TableCell>
-                          <TableCell className="w-32 text-center font-extrabold text-slate-800">
-                            {attempt.score !== null 
-                              ? `${attempt.score} Pts` 
-                              : 'N/A'}
+                        <TableRow 
+                          key={attempt.id} 
+                          className="hover:bg-slate-50/60 transition border-b border-slate-100 last:border-b-0 text-xs"
+                        >
+                          <TableCell className="py-2.5 px-3 font-bold text-[#10234E]">
+                            {attempt.fullName || 'Candidate'}
                           </TableCell>
-                          <TableCell className="w-36 text-slate-500 font-mono">
-                            {attempt.createdAt ? new Date(attempt.createdAt).toLocaleString() : 'N/A'}
+                          <TableCell className="w-28 py-2.5 px-3 text-slate-700 font-semibold uppercase">
+                            {attempt.branch}
                           </TableCell>
-                          <TableCell className="w-36 text-slate-500 font-mono">
-                            {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : 'N/A'}
+                          <TableCell className="py-2.5 px-3 text-slate-600">
+                            {testName}
                           </TableCell>
-                          <TableCell className="w-28 text-center text-slate-650 font-mono font-medium">
+                          <TableCell className="w-28 py-2.5 px-3 text-center font-mono font-bold text-[#1760FF]">
+                            {attempt.score !== null ? `${attempt.score} Pts` : '--'}
+                          </TableCell>
+                          <TableCell className="w-36 py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                            {attempt.createdAt ? new Date(attempt.createdAt).toLocaleDateString() : 'N/A'}
+                          </TableCell>
+                          <TableCell className="w-36 py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                            {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleDateString() : 'N/A'}
+                          </TableCell>
+                          <TableCell className="w-28 py-2.5 px-3 text-center text-slate-600 font-mono">
                             {timeTakenText}
                           </TableCell>
-                          <TableCell className="w-36 text-center">
-                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${
-                              displayStatus === 'Completed'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                : displayStatus === 'Auto Submitted'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                  : attempt.status === 'in_progress'
-                                    ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                                    : 'bg-slate-50 text-slate-500 border border-slate-200'
-                            }`}>
-                              {displayStatus === 'in_progress' ? 'In Progress' : displayStatus}
+                          <TableCell className="w-36 py-2.5 px-3 text-center">
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${badgeClass}`}>
+                              {statusLabel}
                             </span>
+                          </TableCell>
+                          <TableCell className="w-28 py-2.5 px-3 text-center">
+                            {isFinished ? (
+                              <button
+                                onClick={() => handleViewCodingAnswers(attempt.id)}
+                                className="h-7 px-3 text-[11px] font-bold rounded-lg border border-blue-200 bg-blue-50/60 hover:bg-blue-100 text-[#1760FF] transition cursor-pointer shadow-2xs"
+                              >
+                                View Answer
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 font-medium text-xs">—</span>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
                     })
                   )}
                 </TableBody>
-                </Table>
+              </Table>
+            </div>
+
+            {/* Pagination Controls & Range Footer for Attempts */}
+            <div className="px-4 py-2.5 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-slate-600">
+              <div className="flex items-center gap-2 font-medium text-xs">
+                <span>
+                  {totalFilteredCount === 0 ? (
+                    `Showing 0 of ${attempts.length} attempts`
+                  ) : (
+                    `Showing ${startIndex + 1} – ${endIndex} of ${totalFilteredCount} attempts`
+                  )}
+                </span>
               </div>
-            </CardContent>
-          </Card>
+
+              {/* Navigation Buttons */}
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="h-7 px-2.5 text-xs border-slate-200 rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white cursor-pointer"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 mr-0.5" /> Previous
+                </Button>
+
+                <div className="flex items-center gap-1">
+                  {getPageNumbers(safeCurrentPage, totalPages).map((p, idx) => (
+                    p === '...' ? (
+                      <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 select-none text-xs">…</span>
+                    ) : (
+                      <button
+                        key={`page-${p}`}
+                        onClick={() => setCurrentPage(Number(p))}
+                        className={`h-7 min-w-[28px] px-2 rounded-md font-semibold text-xs transition cursor-pointer ${
+                          safeCurrentPage === p 
+                            ? 'bg-[#1760FF] text-white shadow-2xs font-bold' 
+                            : 'text-slate-600 hover:bg-slate-200/70'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safeCurrentPage >= totalPages || totalFilteredCount === 0}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="h-7 px-2.5 text-xs border-slate-200 rounded-md disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white cursor-pointer"
+                  aria-label="Next page"
+                >
+                  Next <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
       {/* Student History Details Modal */}
       {selectedStudent && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-950">{selectedStudent.fullName}</h2>
-                <p className="text-xs text-slate-500 font-mono mt-1">USN: {selectedStudent.usn} | {selectedStudent.branch} | {selectedStudent.college}</p>
+                <h2 className="text-xl font-extrabold text-[#10234E]">{selectedStudent.fullName}</h2>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  USN: {selectedStudent.usn} | {selectedStudent.branch} | {selectedStudent.college}
+                </p>
               </div>
-              <Button variant="outline" onClick={() => setSelectedStudent(null)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-lg transition flex items-center cursor-pointer border-none">
-                <ArrowLeft className="w-4 h-4 mr-2" /> Back
-              </Button>
+              <button
+                onClick={() => setSelectedStudent(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 space-y-4">
-              <h3 className="font-bold text-slate-800 text-sm">Completed & Assigned Test History</h3>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-slate-50/50 space-y-3.5">
+              <h3 className="font-bold text-[#10234E] text-xs uppercase tracking-wider">
+                Assigned Tests & Submission History
+              </h3>
 
-              <div className="bg-white rounded-xl border border-slate-150 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden">
                 <div className="w-full overflow-x-auto">
                   <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead>Test Name</TableHead>
-                      <TableHead className="w-40">Assigned Date</TableHead>
-                      <TableHead className="w-40">Submission Date</TableHead>
-                      <TableHead className="w-28 text-center">Score</TableHead>
-                      <TableHead className="w-32 text-center">Status</TableHead>
-                      <TableHead className="w-32 text-center">Answer</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isHistoryLoading ? (
+                    <TableHeader className="bg-slate-50/80 border-b border-slate-100">
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-slate-400">Loading student history...</TableCell>
+                        <TableHead className="font-bold text-[11px] text-slate-600">Test Name</TableHead>
+                        <TableHead className="w-36 font-bold text-[11px] text-slate-600">Assigned Date</TableHead>
+                        <TableHead className="w-36 font-bold text-[11px] text-slate-600">Submission Date</TableHead>
+                        <TableHead className="w-24 text-center font-bold text-[11px] text-slate-600">Score</TableHead>
+                        <TableHead className="w-32 text-center font-bold text-[11px] text-slate-600">Status</TableHead>
+                        <TableHead className="w-28 text-center font-bold text-[11px] text-slate-600">Answer</TableHead>
                       </TableRow>
-                    ) : selectedStudentHistory.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-slate-400">No test history found for this student</TableCell>
-                      </TableRow>
-                    ) : (
-                      selectedStudentHistory.map(history => {
-                        const testName = `Campus Recruitment Assessment – ${history.branch || 'General'} 2027`;
-                        return (
-                          <TableRow key={history.id} className="hover:bg-slate-50/30 border-b border-slate-100 last:border-b-0">
-                            <TableCell className="font-semibold text-slate-800 text-xs">{testName}</TableCell>
-                            <TableCell className="w-40 text-xs text-slate-500 font-mono">
-                              {new Date(history.createdAt).toLocaleString()}
-                            </TableCell>
-                            <TableCell className="w-40 text-xs text-slate-500 font-mono">
-                              {history.submittedAt ? new Date(history.submittedAt).toLocaleString() : 'N/A'}
-                            </TableCell>
-                            <TableCell className="w-28 text-center font-bold text-indigo-600 font-mono text-xs">
-                              {history.score !== null 
-                                ? `${history.score} Pts` 
-                                : 'Pending'}
-                            </TableCell>
-                            <TableCell className="w-32 text-center">
-                              <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${
-                                history.status === 'evaluated' || history.status === 'submitted'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                  : 'bg-slate-50 text-slate-500 border border-slate-200'
-                              }`}>
-                                {history.status === 'submitted' || history.status === 'evaluated' ? 'Completed' : history.status}
-                              </span>
-                            </TableCell>
-                            <TableCell className="w-32 text-center">
-                              {history.status === 'submitted' || history.status === 'evaluated' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleViewCodingAnswers(history.id)}
-                                  className="text-xs text-blue-600 font-bold hover:underline cursor-pointer"
-                                >
-                                  View Answer
-                                </button>
-                              ) : (
-                                <span className="text-xs text-slate-400">—</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
+                    </TableHeader>
+                    <TableBody>
+                      {isHistoryLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-slate-400">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#1760FF]" />
+                          </TableCell>
+                        </TableRow>
+                      ) : selectedStudentHistory.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                            No test history recorded for this student.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        selectedStudentHistory.map(history => {
+                          const testName = `Recruitment Assessment – ${history.branch || 'General'}`;
+                          const isFinished = history.status === 'submitted' || history.status === 'evaluated' || history.status === 'auto_submitted';
+                          
+                          return (
+                            <TableRow key={history.id} className="hover:bg-slate-50/50 border-b border-slate-100 last:border-b-0 text-xs">
+                              <TableCell className="font-bold text-[#10234E]">{testName}</TableCell>
+                              <TableCell className="w-36 text-slate-500 font-mono text-[11px]">
+                                {new Date(history.createdAt).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell className="w-36 text-slate-500 font-mono text-[11px]">
+                                {history.submittedAt ? new Date(history.submittedAt).toLocaleDateString() : 'N/A'}
+                              </TableCell>
+                              <TableCell className="w-24 text-center font-bold text-[#1760FF] font-mono">
+                                {history.score !== null ? `${history.score} Pts` : '--'}
+                              </TableCell>
+                              <TableCell className="w-32 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                  isFinished ? 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]' : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}>
+                                  {isFinished ? 'Completed' : history.status}
+                                </span>
+                              </TableCell>
+                              <TableCell className="w-28 text-center">
+                                {isFinished ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewCodingAnswers(history.id)}
+                                    className="h-6 px-2 text-[10px] font-bold rounded border border-blue-200 bg-blue-50 text-[#1760FF] hover:bg-blue-100 transition cursor-pointer"
+                                  >
+                                    View Answer
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
                   </Table>
                 </div>
               </div>
@@ -644,60 +1274,56 @@ export function StudentsViewer() {
 
       {/* Round 2 Question Selection Modal */}
       {isRound2ModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="p-5 border-b border-slate-100 flex flex-col gap-2">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Configure Round 2 Test</h2>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Publishing to <strong className="text-indigo-600">{selectedStudentIds.size} student(s)</strong>
-                  </p>
-                </div>
-                <Button variant="outline" onClick={() => setIsRound2ModalOpen(false)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-lg transition flex items-center cursor-pointer border-none">
-                  <ArrowLeft className="w-4 h-4 mr-2" /> Back
-                </Button>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-extrabold text-[#10234E]">Configure Round 2 Test</h2>
+                <p className="text-xs text-slate-500">
+                  Assigning test to <strong className="text-[#1760FF]">{selectedStudentIds.size} student(s)</strong>
+                </p>
               </div>
+              <button 
+                onClick={() => setIsRound2ModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="p-5 flex flex-col sm:flex-row gap-4 bg-slate-50 border-b border-slate-100">
+            <div className="p-4 flex flex-col sm:flex-row gap-3 bg-slate-50/80 border-b border-slate-100">
               <div className="flex-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Search Questions</label>
                 <Input
                   placeholder="Search by question text..."
                   value={questionSearchQuery}
                   onChange={(e) => setQuestionSearchQuery(e.target.value)}
-                  className="bg-white border-slate-200"
+                  className="bg-white border-slate-200 h-8.5 text-xs rounded-lg"
                 />
               </div>
-              <div className="w-full sm:w-64">
+              <div className="w-full sm:w-56">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Section</label>
                 <select
                   value={selectedQuestionSection}
                   onChange={(e) => setSelectedQuestionSection(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-700"
+                  className="w-full h-8.5 px-3 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
                 >
                   <option value="all">All Sections</option>
-                  <option value="APTITUDE">Aptitude</option>
-                  <option value="CODING">Coding</option>
-                  <option value="ELIGIBILITY">Eligibility</option>
-                  <option value="ATTITUDE_AND_OWNERSHIP">Attitude & Ownership</option>
-                  <option value="LEARNING_APTITUDE">Learning Aptitude</option>
-                  <option value="PROBLEM_SOLVING">Problem Solving</option>
-                  <option value="EXECUTION_AND_RELIABILITY">Execution & Reliability</option>
-                  <option value="COMMUNICATION_AND_TEAMWORK">Communication & Teamwork</option>
-                  <option value="INTEGRITY">Integrity</option>
-                  <option value="AI_LITERACY">AI Literacy</option>
+                  {CATEGORY_ORDER.map((catId) => (
+                    <option key={catId} value={catId}>
+                      {CATEGORIES[catId].label}
+                    </option>
+                  ))}
                 </select>
               </div>
-              <div className="w-32">
+              <div className="w-28">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Duration (mins)</label>
                 <Input
                   type="number"
                   min="5"
                   value={round2Duration}
                   onChange={(e) => setRound2Duration(parseInt(e.target.value) || 60)}
-                  className="bg-white border-slate-200 font-mono"
+                  className="bg-white border-slate-200 h-8.5 text-xs font-mono rounded-lg"
                 />
               </div>
             </div>
@@ -705,71 +1331,84 @@ export function StudentsViewer() {
             <div className="flex-1 overflow-y-auto p-0 bg-white">
               <div className="w-full overflow-x-auto">
                 <Table>
-                <TableHeader className="bg-slate-50/70 border-b border-slate-100 sticky top-0 z-10 shadow-sm">
-                  <TableRow>
-                    <TableHead className="w-12 text-center">
-                      <input 
-                        type="checkbox" 
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                        checked={filteredQuestions.length > 0 && selectedRound2QuestionIds.size === filteredQuestions.length}
-                        onChange={toggleAllRound2Questions}
-                      />
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700">Question Content</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-32">Section</TableHead>
-                    <TableHead className="font-semibold text-slate-700 w-24 text-center">Marks</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isQuestionsLoading ? (
+                  <TableHeader className="bg-slate-50/80 border-b border-slate-100 sticky top-0 z-10 shadow-2xs">
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-12 text-slate-400">Loading question bank...</TableCell>
+                      <TableHead className="w-10 text-center py-2 px-2">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                          checked={filteredQuestions.length > 0 && selectedRound2QuestionIds.size === filteredQuestions.length}
+                          onChange={toggleAllRound2Questions}
+                        />
+                      </TableHead>
+                      <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3">Question Content</TableHead>
+                      <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-36">Section</TableHead>
+                      <TableHead className="font-bold text-[11px] uppercase tracking-wider text-slate-600 py-2 px-3 w-20 text-center">Marks</TableHead>
                     </TableRow>
-                  ) : filteredQuestions.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center py-12 text-slate-400">No questions found</TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredQuestions.map(q => (
-                      <TableRow key={q.id} className="hover:bg-slate-50/70 transition border-b border-slate-100">
-                        <TableCell className="text-center">
-                          <input 
-                            type="checkbox" 
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            checked={selectedRound2QuestionIds.has(q.id)}
-                            onChange={(e) => toggleRound2Question(q.id, e)}
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium text-slate-800 max-w-lg">
-                          <div className="truncate text-xs" title={q.question_text}>{q.question_text}</div>
-                        </TableCell>
-                        <TableCell className="w-32">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700">
-                            {(q.section || 'APTITUDE').replace(/_/g, ' ')}
-                          </span>
-                        </TableCell>
-                        <TableCell className="w-24 text-center text-slate-600 font-semibold text-xs">
-                          {q.points || 10}
+                  </TableHeader>
+                  <TableBody>
+                    {isQuestionsLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-10 text-slate-400">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#1760FF]" />
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : filteredQuestions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-10 text-slate-400 text-xs">
+                          No questions match filter.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredQuestions.map(q => (
+                        <TableRow key={q.id} className="hover:bg-slate-50/60 transition border-b border-slate-100 text-xs">
+                          <TableCell className="text-center py-2 px-2">
+                            <input 
+                              type="checkbox" 
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                              checked={selectedRound2QuestionIds.has(q.id)}
+                              onChange={(e) => toggleRound2Question(q.id, e)}
+                            />
+                          </TableCell>
+                          <TableCell className="py-2 px-3 font-medium text-slate-800 max-w-lg">
+                            <div className="truncate text-xs" title={q.question_text}>{q.question_text}</div>
+                          </TableCell>
+                          <TableCell className="w-36 py-2 px-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-[#1760FF] border border-blue-100">
+                              {getCategoryLabel(q.section)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="w-20 text-center py-2 px-3 text-slate-700 font-bold text-xs">
+                            {q.points || 10}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
             
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+            <div className="p-3.5 border-t border-slate-100 bg-slate-50/80 flex justify-between items-center">
               <div className="text-xs font-bold text-slate-600">
-                Selected <span className="text-indigo-600">{selectedRound2QuestionIds.size}</span> questions
+                Selected <span className="text-[#1760FF]">{selectedRound2QuestionIds.size}</span> questions
               </div>
-              <Button 
-                onClick={submitRound2Publish}
-                disabled={isPublishing || selectedRound2QuestionIds.size === 0}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl px-8"
-              >
-                {isPublishing ? 'Publishing...' : 'Publish Test Now'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsRound2ModalOpen(false)} 
+                  className="h-8.5 px-3.5 text-xs rounded-xl"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={submitRound2Publish}
+                  disabled={isPublishing || selectedRound2QuestionIds.size === 0}
+                  className="bg-[#1760FF] hover:bg-blue-700 text-white font-bold h-8.5 rounded-xl px-5 text-xs shadow-2xs"
+                >
+                  {isPublishing ? 'Publishing...' : 'Publish Test Now'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -5,10 +5,8 @@ import { useAuth } from '@/context/auth-context';
 import { useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertTriangle, Loader2, ArrowLeft, Save } from 'lucide-react';
+import { AlertTriangle, Loader2, Save, User, Mail, Phone, School, IdCard, GitBranch } from 'lucide-react';
 import { StudentProfileSchema, StudentProfileInput } from '@/lib/validators';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
@@ -24,7 +22,7 @@ export function ProfileForm() {
     reset,
     formState: { errors, isDirty },
   } = useForm<StudentProfileInput>({
-    resolver: zodResolver(StudentProfileSchema),
+    resolver: zodResolver(StudentProfileSchema) as any,
     defaultValues: {
       email: '',
       fullName: '',
@@ -49,7 +47,7 @@ export function ProfileForm() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.student) {
-        const fetchedData = {
+        const fetchedData: StudentProfileInput = {
           email: response.data.student.email || user?.email || '',
           fullName: response.data.student.fullName || '',
           phone: response.data.student.phone || '',
@@ -106,110 +104,182 @@ export function ProfileForm() {
   };
 
   return (
-    <div className="w-full max-w-xl mx-auto space-y-4">
-      <button 
-        onClick={() => router.push('/student/dashboard')}
-        className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors mb-2"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Dashboard
-      </button>
-      <div className="p-6 sm:p-8 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-6">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">My Profile</h2>
-          <p className="text-xs text-slate-500 font-medium">View and update your profile information.</p>
-        </div>
+    <div className="w-full max-w-3xl mx-auto space-y-6">
+      {/* Top Header Section */}
+      <div className="space-y-1 sm:space-y-1.5">
+        <h1 className="text-[26px] sm:text-[32px] font-bold text-[#10234E] tracking-tight leading-tight">
+          Candidate Profile
+        </h1>
+        <p className="text-[14px] sm:text-[15px] text-[#607797] font-normal">
+          Review and update your academic details and contact information.
+        </p>
+      </div>
 
-      {apiError && (
-        <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-xl">
-          <AlertTriangle className="w-4 h-4 inline-block mr-1" /> {apiError}
-        </div>
-      )}
+      {/* Main Profile Form Card */}
+      <div className="p-6 sm:p-9 bg-white rounded-2xl sm:rounded-[22px] border border-[#DCE5F0] shadow-[0_2px_12px_rgba(16,35,78,0.03)] space-y-7">
+        {apiError && (
+          <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs sm:text-sm font-semibold rounded-xl flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 stroke-[2.2]" />
+            <span>{apiError}</span>
+          </div>
+        )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="space-y-1.5">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Email Address</label>
-          <Input
-            {...register('email')}
-            type="email"
-            className="w-full bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 caret-blue-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:caret-blue-400 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
-            placeholder="Email Address"
-          />
-          {errors.email && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.email.message}</p>}
-        </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Email Field (Read-only) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#10234E] flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-[#607797]" />
+                <span>Email Address</span>
+              </label>
+              <span className="text-[11px] font-semibold text-[#1760FF] bg-[#EEF5FF] px-2.5 py-0.5 rounded-md border border-[#BFDBFE]/60">
+                Primary Account (Read-Only)
+              </span>
+            </div>
+            <input
+              {...register('email')}
+              type="email"
+              readOnly
+              className="w-full h-[48px] px-4 rounded-xl border border-[#DCE5F0] bg-[#F8FAFC] text-[#607797] text-sm font-medium cursor-not-allowed select-none outline-none shadow-[0_1px_2px_rgba(16,35,78,0.02)]"
+              placeholder="Email Address"
+            />
+            {errors.email && (
+              <p className="text-rose-600 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{String(errors.email.message)}</span>
+              </p>
+            )}
+          </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Full Name</label>
-            <Input
-              {...register('fullName')}
+          {/* Full Name & Phone Number (Two-Column) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#10234E] flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-[#607797]" />
+                <span>Full Name</span>
+              </label>
+              <input
+                {...register('fullName')}
+                type="text"
+                className="w-full h-[48px] px-4 rounded-xl border border-[#DCE5F0] bg-white text-[#10234E] placeholder:text-[#94A3B8] text-sm font-medium focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 transition-all outline-none shadow-[0_1px_2px_rgba(16,35,78,0.02)]"
+                placeholder="Enter full name"
+              />
+              {errors.fullName && (
+                <p className="text-rose-600 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{String(errors.fullName.message)}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#10234E] flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-[#607797]" />
+                <span>Phone Number</span>
+              </label>
+              <input
+                {...register('phone')}
+                type="tel"
+                maxLength={10}
+                onInput={(e) => { e.currentTarget.value = e.currentTarget.value.replace(/[^0-9]/g, ''); }}
+                className="w-full h-[48px] px-4 rounded-xl border border-[#DCE5F0] bg-white text-[#10234E] placeholder:text-[#94A3B8] text-sm font-medium focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 transition-all outline-none shadow-[0_1px_2px_rgba(16,35,78,0.02)]"
+                placeholder="10-digit mobile number"
+              />
+              {errors.phone && (
+                <p className="text-rose-600 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{String(errors.phone.message)}</span>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* College Name & USN / Roll Number (Two-Column) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#10234E] flex items-center gap-1.5">
+                <School className="w-3.5 h-3.5 text-[#607797]" />
+                <span>College / Institution</span>
+              </label>
+              <input
+                {...register('college')}
+                type="text"
+                className="w-full h-[48px] px-4 rounded-xl border border-[#DCE5F0] bg-white text-[#10234E] placeholder:text-[#94A3B8] text-sm font-medium focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 transition-all outline-none shadow-[0_1px_2px_rgba(16,35,78,0.02)]"
+                placeholder="College or university name"
+              />
+              {errors.college && (
+                <p className="text-rose-600 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{String(errors.college.message)}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#10234E] flex items-center gap-1.5">
+                <IdCard className="w-3.5 h-3.5 text-[#607797]" />
+                <span>USN / Roll Number</span>
+              </label>
+              <input
+                {...register('usn')}
+                type="text"
+                className="w-full h-[48px] px-4 rounded-xl border border-[#DCE5F0] bg-white text-[#10234E] placeholder:text-[#94A3B8] text-sm font-medium focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 transition-all outline-none uppercase shadow-[0_1px_2px_rgba(16,35,78,0.02)]"
+                placeholder="e.g. 1MS21CS001"
+              />
+              {errors.usn && (
+                <p className="text-rose-600 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{String(errors.usn.message)}</span>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Academic Branch */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#10234E] flex items-center gap-1.5">
+              <GitBranch className="w-3.5 h-3.5 text-[#607797]" />
+              <span>Academic Branch</span>
+            </label>
+            <input
+              {...register('branchName')}
               type="text"
-              className="w-full bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 caret-blue-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:caret-blue-400 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
-              placeholder="Full Name"
+              className="w-full h-[48px] px-4 rounded-xl border border-[#DCE5F0] bg-white text-[#10234E] placeholder:text-[#94A3B8] text-sm font-medium focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 transition-all outline-none shadow-[0_1px_2px_rgba(16,35,78,0.02)]"
+              placeholder="e.g. Computer Science and Engineering"
             />
-            {errors.fullName && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.fullName.message}</p>}
+            {errors.branchName && (
+              <p className="text-rose-600 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{String(errors.branchName.message)}</span>
+              </p>
+            )}
           </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Phone Number</label>
-            <Input
-              {...register('phone')}
-              type="tel"
-              maxLength={10}
-              onInput={(e) => { e.currentTarget.value = e.currentTarget.value.replace(/[^0-9]/g, ''); }}
-              className="w-full bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 caret-blue-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:caret-blue-400 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
-              placeholder="Phone Number"
-            />
-            {errors.phone && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.phone.message}</p>}
+          {/* Footer Action Area */}
+          <div className="pt-6 border-t border-[#EEF3FA] flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-xs text-[#607797] font-medium order-2 sm:order-1 text-center sm:text-left">
+              Ensure details match your official college records.
+            </p>
+
+            <button
+              type="submit"
+              disabled={!isDirty || isSubmitting}
+              className="h-[48px] px-8 bg-[#1760FF] hover:bg-[#1250DF] active:scale-[0.99] text-white font-semibold text-[15px] rounded-xl shadow-[0_4px_14px_rgba(23,96,255,0.25)] hover:shadow-[0_6px_20px_rgba(23,96,255,0.3)] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none order-1 sm:order-2 w-full sm:w-auto"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Saving Changes...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 stroke-[2.2]" />
+                  <span>Save Changes</span>
+                </>
+              )}
+            </button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">College Name</label>
-            <Input
-              {...register('college')}
-              type="text"
-              className="w-full bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 caret-blue-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:caret-blue-400 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
-              placeholder="College"
-            />
-            {errors.college && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.college.message}</p>}
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">USN / Roll Number</label>
-            <Input
-              {...register('usn')}
-              type="text"
-              className="w-full bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 caret-blue-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:caret-blue-400 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
-              placeholder="USN / Roll Number"
-            />
-            {errors.usn && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.usn.message}</p>}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Academic Branch</label>
-          <input
-            {...register('branchName')}
-            type="text"
-            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold transition focus:outline-none bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300 caret-blue-600 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500 dark:caret-blue-400 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
-            placeholder="Branch"
-          />
-          {errors.branchName && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.branchName.message}</p>}
-        </div>
-
-        <div className="pt-4 flex">
-          <Button
-            type="submit"
-            disabled={!isDirty || isSubmitting}
-            className="w-full h-10 px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm rounded-lg shadow-sm transition cursor-pointer flex items-center justify-center gap-2"
-          >
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save Changes
-          </Button>
-        </div>
-      </form>
+        </form>
       </div>
     </div>
   );

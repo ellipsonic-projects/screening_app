@@ -4,10 +4,11 @@
  */
 
 import { z } from 'zod';
+import { isPersonalityCategory } from '@/lib/categories';
 
 // ==================== Auth Schemas ====================
 export const RegisterSchema = z.object({
-  email: z.string().email('Invalid email format'),
+  email: z.string().trim().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string(),
   role: z.enum(['student', 'admin']).default('student'),
@@ -17,7 +18,7 @@ export const RegisterSchema = z.object({
 });
 
 export const LoginSchema = z.object({
-  email: z.string().email('Invalid email format'),
+  email: z.string().trim().email('Invalid email format'),
   password: z.string().min(1, 'Password is required'),
 });
 
@@ -78,10 +79,18 @@ export const QuestionSchema = z.object({
   return true;
 }, {
   message: 'Missing required configuration for the selected question type',
+}).refine((data) => {
+  if (isPersonalityCategory(data.section)) {
+    return data.type === 'open_text';
+  }
+  return true;
+}, {
+  message: 'Personality category only supports open-text questions',
+  path: ['type'],
 });
 
 export const SubmitTestResponseSchema = z.object({
-  assessmentId: z.string().uuid('Invalid assessment ID'),
+  assessmentId: z.string().uuid('Invalid assessment ID').optional(),
   studentId: z.string().optional(),
   submittedAt: z.string().datetime().optional(),
   status: z.enum(['submitted', 'auto_submitted']).optional(),

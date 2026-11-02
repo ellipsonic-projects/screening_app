@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { hashPassword, verifyToken } from '@/lib/auth';
-import { getCachedOTP, clearCachedOTP } from '../otp/route';
+import { getCachedOTP, clearCachedOTP } from '@/lib/otp';
 import prisma from '@/lib/prisma';
 import {
   successResponse,

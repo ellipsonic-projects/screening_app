@@ -1,9 +1,10 @@
 // lib/questionMapper.ts
+import { canonicalizeCategory, isEligibilityCategory, isPersonalityCategory, SUPPORTED_DISPLAY_LABELS } from '@/lib/categories';
 
 export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   // Raw data from either the Excel importer or the Create Question Wizard state
   const rawType = String(rawData.type || rawData['Question Type'] || '').trim().toLowerCase();
-  const rawSection = String(rawData.section || rawData['Section'] || '').trim().toUpperCase();
+  const rawSection = String(rawData.section || rawData['Section'] || '').trim();
   
   // 1. Map to strict DB types
   let type = rawType;
@@ -13,11 +14,22 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
     type = 'open_text'; // fallback for unknown types
   }
 
-  // 2. Map to strict sections
-  let section = rawSection;
-  const ALLOWED_SECTIONS = ['APTITUDE', 'CODING', 'ELIGIBILITY', 'ATTITUDE_AND_OWNERSHIP', 'LEARNING_APTITUDE', 'PROBLEM_SOLVING', 'EXECUTION_AND_RELIABILITY', 'COMMUNICATION_AND_TEAMWORK', 'INTEGRITY', 'AI_LITERACY'];
-  if (!ALLOWED_SECTIONS.includes(section)) {
-    section = 'APTITUDE'; // fallback
+  // 2. Canonicalize section and enforce strict validation (never silently fall back)
+  const canonicalSection = canonicalizeCategory(rawSection);
+  if (!canonicalSection) {
+    throw new Error(
+      `Invalid or unrecognized category/section: "${rawSection || 'Empty'}". Supported categories: ${SUPPORTED_DISPLAY_LABELS.join(', ')}`
+    );
+  }
+  const section = canonicalSection;
+
+  // Enforce open-text only for Personality category
+  if (isPersonalityCategory(section)) {
+    if (type !== 'open_text' || (rawType && !['open_text', 'open text'].includes(rawType))) {
+      throw new Error(
+        `Invalid question type "${rawType || type}" for Personality category: Personality only supports open-text questions.`
+      );
+    }
   }
 
   // 3. Construct unified optionsJson object
@@ -93,19 +105,56 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   }
 
   if (['open_text', 'structured_response'].includes(type)) {
-    if (rawData.minWords) optionsJson.minWords = Number(rawData.minWords);
-    if (rawData.maxWords) optionsJson.maxWords = Number(rawData.maxWords);
+    const minW = rawData.minWords ?? rawData['Minimum Words'] ?? rawData['Min Words'];
+    const maxW = rawData.maxWords ?? rawData['Maximum Words'] ?? rawData['Max Words'];
+    if (minW !== undefined && minW !== null && minW !== '') optionsJson.minWords = Number(minW);
+    if (maxW !== undefined && maxW !== null && maxW !== '') optionsJson.maxWords = Number(maxW);
   }
 
+  // Question Code — required for Personality (P01–P33), ignored for all other sections
+  if (isPersonalityCategory(section)) {
+    const rawCode = String(rawData.code || rawData['Question Code'] || rawData['Code'] || rawData.optionsJson?.code || rawData.options_json?.code || '').trim();
+    if (!rawCode) {
+      throw new Error(
+        `Row ${rowIndex !== undefined ? rowIndex : '?'}: Personality question is missing a Question Code. ` +
+        `Add a valid code (P01–P33) in the "Question Code" column.`
+      );
+    }
+    if (!/^P(0?[1-9]|[12][0-9]|3[0-3])$/i.test(rawCode)) {
+      throw new Error(
+        `Row ${rowIndex !== undefined ? rowIndex : '?'}: Invalid Question Code "${rawCode}". ` +
+        `Must be P01–P33 (e.g. P01, P12, P33).`
+      );
+    }
+    let normalizedCode = rawCode.toUpperCase();
+    if (normalizedCode.length === 2) {
+      normalizedCode = `P0${normalizedCode.slice(1)}`;
+    }
+    optionsJson.code = normalizedCode;
+  }
+
+
+  // Preserve specialized scenario and case study metadata if provided
+  if (rawData.scenario) optionsJson.scenario = String(rawData.scenario);
+  if (rawData.caseStudyTitle) optionsJson.caseStudyTitle = String(rawData.caseStudyTitle);
+  if (rawData.caseStudyBackground) optionsJson.caseStudyBackground = String(rawData.caseStudyBackground);
+  if (rawData.caseStudyContext) optionsJson.caseStudyContext = String(rawData.caseStudyContext);
+  if (rawData.caseStudyProblemStatement) optionsJson.caseStudyProblemStatement = String(rawData.caseStudyProblemStatement);
+  if (rawData.caseStudySupportingInfo) optionsJson.caseStudySupportingInfo = String(rawData.caseStudySupportingInfo);
+  if (rawType && rawType !== type && !['yes_no', 'coding_mcq'].includes(rawType)) {
+    optionsJson.subtype = rawType;
+  }
+
+
   // 4. Construct Final Payload
-  const showsMarks = section !== 'ELIGIBILITY';
+  const showsMarks = !isEligibilityCategory(section) && !isPersonalityCategory(section);
   
   const payload = {
     ...(rowIndex !== undefined ? { _rowIndex: rowIndex } : {}),
-    questionText: String(rawData.questionText || rawData['Question Text'] || ''),
+    questionText: String(rawData.questionText || rawData['Question Text'] || rawData['Question'] || ''),
     type,
     section,
-    points: type === 'single_select' ? 0 : (showsMarks ? (Number(rawData.points || rawData['Points']) || 0) : 0),
+    points: type === 'single_select' ? 0 : (showsMarks ? (Number(rawData.points || rawData['Points'] || rawData['Marks']) || 0) : 0),
     timeLimitSeconds: (Number(rawData.expectedDuration || rawData['Expected Duration']) ? Number(rawData.expectedDuration || rawData['Expected Duration']) * 60 : Number(rawData.timeLimitSeconds || rawData['Time Limit'])) || 60,
     isPublished: rawData.isPublished !== undefined ? rawData.isPublished : true,
     explanation: (rawData.explanation || rawData['Explanation']) ? String(rawData.explanation || rawData['Explanation']) : undefined,

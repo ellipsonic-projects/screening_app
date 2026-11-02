@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { QuestionSchema } from '@/lib/validators';
 import prisma from '@/lib/prisma';
+import { canonicalizeCategory, isPersonalityCategory } from '@/lib/categories';
 
 /**
  * GET /api/questions
@@ -89,6 +90,15 @@ export async function POST(request: NextRequest) {
     }
     
     const validatedData = validationResult.data;
+    const rawSection = validatedData.section;
+    const canonicalSection = rawSection ? canonicalizeCategory(rawSection) : 'APTITUDE';
+    if (rawSection && !canonicalSection) {
+      return NextResponse.json({ message: `Invalid category: "${rawSection}"` }, { status: 400 });
+    }
+    if (isPersonalityCategory(canonicalSection) && validatedData.type !== 'open_text') {
+      return NextResponse.json({ message: 'Personality category only supports open-text questions' }, { status: 400 });
+    }
+
     const question = await prisma.question.create({
       data: {
         question_text: validatedData.questionText,
@@ -99,13 +109,11 @@ export async function POST(request: NextRequest) {
         points: validatedData.points,
         explanation: validatedData.explanation,
         is_published: validatedData.isPublished,
-        assessment_dimension: validatedData.assessmentDimension,
         weight: validatedData.weight,
-        expected_answer_length: validatedData.expectedAnswerLength,
         expected_duration: validatedData.expectedDuration,
         is_required: validatedData.isRequired,
         display_order: validatedData.displayOrder,
-        section: validatedData.section,
+        section: canonicalSection || 'APTITUDE',
         section_order: validatedData.sectionOrder,
         question_order: validatedData.questionOrder,
         created_by: decoded.userId,

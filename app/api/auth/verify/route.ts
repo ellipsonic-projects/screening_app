@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
+import prisma from '@/lib/prisma';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/auth/verify
- * Verify the JWT token and return user information
+ * Verify the JWT token and confirm user existence and active status in the database
  */
 export async function GET(request: NextRequest) {
   try {
@@ -25,12 +28,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Verify user actually exists in the database and is active
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, email: true, role: true, is_active: true }
+    });
+
+    if (!user || !user.is_active) {
+      return NextResponse.json(
+        { message: 'User account not found or deactivated' },
+        { status: 401 }
+      );
+    }
+
     return NextResponse.json({
       message: 'Token is valid',
       user: {
-        id: decoded.userId,
-        email: decoded.email,
-        role: decoded.role,
+        id: user.id,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (error: any) {
@@ -40,3 +56,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

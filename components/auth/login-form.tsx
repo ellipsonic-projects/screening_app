@@ -4,10 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertTriangle, BadgeCheck, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Mail, Lock, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
 import { LoginSchema, LoginInput } from '@/lib/validators';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/auth-context';
 import Link from 'next/link';
 import { BrandLogo } from '@/components/common/BrandLogo';
@@ -20,6 +18,7 @@ export function LoginForm() {
 
   const [showPassword, setShowPassword] = useState(false);
 
+  // Forgot password flow states
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [resetStep, setResetStep] = useState(1);
   const [resetEmail, setResetEmail] = useState('');
@@ -42,7 +41,7 @@ export function LoginForm() {
         const res = await fetch('/api/auth/otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: resetEmail })
+          body: JSON.stringify({ email: resetEmail }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || data.error?.message || 'Failed to send OTP');
@@ -51,17 +50,17 @@ export function LoginForm() {
       } else if (resetStep === 2) {
         if (!resetOtp) throw new Error('OTP is required');
         setResetStep(3);
-        setResetSuccess('OTP Received. Enter new password.');
+        setResetSuccess('OTP verified. Enter your new password.');
       } else if (resetStep === 3) {
         if (!resetNewPassword) throw new Error('New password is required');
         const res = await fetch('/api/auth/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: resetEmail, otp: resetOtp, newPassword: resetNewPassword })
+          body: JSON.stringify({ email: resetEmail, otp: resetOtp, newPassword: resetNewPassword }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || data.error?.message || 'Reset failed');
-        setResetSuccess('Password reset successful! You can now login.');
+        setResetSuccess('Password reset successful! You can now sign in.');
         setTimeout(() => {
           setIsForgotPassword(false);
           setResetStep(1);
@@ -106,122 +105,234 @@ export function LoginForm() {
   if (!mounted) return null;
 
   return (
-    <div className="w-full max-w-md mx-auto p-6 sm:p-8 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-6">
-      <div className="text-center flex flex-col items-center pb-2">
-        <BrandLogo showTagline size="lg" />
+    <div className="w-[calc(100%-32px)] sm:w-full max-w-[410px] mx-auto p-7 sm:p-8 bg-white rounded-[20px] border border-[#E2ECF8] shadow-[0_10px_35px_rgba(16,35,78,0.06)] font-sans-ui text-left">
+      {/* 1. Branding Header */}
+      <div className="flex justify-center mb-5 sm:mb-6">
+        <BrandLogo size="md" showTagline={false} />
       </div>
 
       {isForgotPassword ? (
-        <form onSubmit={handleForgotPassword} className="space-y-4">
+        /* Forgot Password 3-Step Flow */
+        <div>
+          <h1 className="text-[24px] sm:text-[26px] font-bold text-[#10234E] tracking-tight text-center mb-2">
+            Reset Password
+          </h1>
+          <p className="text-xs sm:text-[13px] text-[#64748B] text-center mb-6">
+            {resetStep === 1 && 'Enter your email to receive a verification OTP.'}
+            {resetStep === 2 && 'Enter the 6-digit OTP code sent to your email.'}
+            {resetStep === 3 && 'Create a new secure password for your account.'}
+          </p>
+
           {resetError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-xl">
-              <AlertTriangle className="w-4 h-4 inline-block mr-1" /> {resetError}
+            <div className="p-3 mb-4 bg-rose-50 border border-rose-200/80 text-rose-700 text-xs sm:text-[13px] font-medium rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{resetError}</span>
             </div>
           )}
+
           {resetSuccess && (
-            <div className="p-3.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl">
-              <BadgeCheck className="w-4 h-4 inline-block mr-1" /> {resetSuccess}
+            <div className="p-3 mb-4 bg-emerald-50 border border-emerald-200/80 text-emerald-700 text-xs sm:text-[13px] font-medium rounded-xl flex items-center gap-2">
+              <BadgeCheck className="w-4 h-4 shrink-0 text-emerald-600" />
+              <span>{resetSuccess}</span>
             </div>
           )}
 
-          {resetStep === 1 && (
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Email Address</label>
-              <Input type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} className="w-full text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium" placeholder="Enter your email" required />
-            </div>
-          )}
-          {resetStep === 2 && (
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Enter OTP</label>
-              <Input type="text" value={resetOtp} onChange={(e) => setResetOtp(e.target.value)} className="w-full text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium" placeholder="123456" required />
-            </div>
-          )}
-          {resetStep === 3 && (
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">New Password</label>
-              <Input type="password" value={resetNewPassword} onChange={(e) => setResetNewPassword(e.target.value)} className="w-full text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium" placeholder="Enter your new password" required />
-            </div>
-          )}
-
-          <Button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-sm transition mt-2 cursor-pointer">
-            {isSubmitting ? 'Processing...' : resetStep === 1 ? 'Send OTP' : resetStep === 2 ? 'Verify OTP' : 'Reset Password'}
-          </Button>
-
-          <div className="text-center pt-2">
-            <button type="button" onClick={() => { setIsForgotPassword(false); setResetStep(1); setResetSuccess(''); setResetError(''); }} className="text-xs font-bold text-slate-500 hover:text-slate-800">
-              Back to Login
-            </button>
-          </div>
-        </form>
-      ) : (
-        <>
-          {apiError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-xl">
-              <AlertTriangle className="w-4 h-4 inline-block mr-1" /> {apiError}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Email Address
-              </label>
-              <Input
-                {...register('email')}
-                type="email"
-                className="w-full text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium"
-                placeholder="Enter your email"
-              />
-              {errors.email && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.email.message}</p>}
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <label htmlFor="password" className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Password
+          <form onSubmit={handleForgotPassword} className="space-y-3.5 sm:space-y-4">
+            {resetStep === 1 && (
+              <div className="space-y-1.5">
+                <label className="block text-[14px] font-semibold text-[#10234E]">
+                  Email address
                 </label>
-                <button type="button" onClick={() => setIsForgotPassword(true)} className="text-xs font-bold text-blue-600 hover:text-blue-700">
-                  Forgot Password?
-                </button>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    required
+                    className="w-full h-[46px] pl-10 pr-3.5 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
+                  />
+                </div>
               </div>
+            )}
+
+            {resetStep === 2 && (
+              <div className="space-y-1.5">
+                <label className="block text-[14px] font-semibold text-[#10234E]">
+                  Verification OTP
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+                  <input
+                    type="text"
+                    value={resetOtp}
+                    onChange={(e) => setResetOtp(e.target.value)}
+                    placeholder="Enter 6-digit OTP"
+                    required
+                    className="w-full h-[46px] pl-10 pr-3.5 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
+                  />
+                </div>
+              </div>
+            )}
+
+            {resetStep === 3 && (
+              <div className="space-y-1.5">
+                <label className="block text-[14px] font-semibold text-[#10234E]">
+                  New Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+                  <input
+                    type="password"
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                    required
+                    className="w-full h-[46px] pl-10 pr-3.5 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
+                  />
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full h-[46px] sm:h-[48px] mt-5 bg-[#1760FF] hover:bg-[#1250DF] active:scale-[0.99] text-white font-semibold text-[14px] sm:text-[15px] rounded-xl shadow-xs transition-all flex items-center justify-center cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <span>
+                  {resetStep === 1 ? 'Send OTP' : resetStep === 2 ? 'Verify OTP' : 'Reset Password'}
+                </span>
+              )}
+            </button>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setResetStep(1);
+                  setResetSuccess('');
+                  setResetError('');
+                }}
+                className="inline-flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold text-[#1760FF] hover:text-[#1250DF] transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Sign In</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : (
+        /* Standard Sign In Form */
+        <>
+          <h1 className="text-[26px] sm:text-[28px] font-bold text-[#10234E] tracking-tight text-center mb-6">
+            Sign In
+          </h1>
+
+          {apiError && (
+            <div className="p-3 mb-4 bg-rose-50 border border-rose-200/80 text-rose-700 text-xs sm:text-[13px] font-medium rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{apiError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 sm:space-y-4">
+            {/* Email Address Field */}
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="block text-[14px] font-semibold text-[#10234E]">
+                Email address
+              </label>
               <div className="relative">
-                <Input
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+                <input
+                  {...register('email')}
+                  id="email"
+                  type="email"
+                  placeholder="Enter your email"
+                  className="w-full h-[46px] pl-10 pr-3.5 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
+                />
+              </div>
+              {errors.email && (
+                <p className="text-rose-500 text-xs font-medium pl-1">{errors.email.message}</p>
+              )}
+            </div>
+
+            {/* Password Field */}
+            <div className="space-y-1.5">
+              <label htmlFor="password" className="block text-[14px] font-semibold text-[#10234E]">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#94A3B8] pointer-events-none" />
+                <input
                   {...register('password')}
+                  id="password"
                   type={showPassword ? 'text' : 'password'}
-                  className="w-full pr-10 text-slate-900 placeholder:text-slate-400 bg-white border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-200 caret-blue-600 h-11 rounded-lg text-sm font-medium"
                   placeholder="Enter your password"
+                  className="w-full h-[46px] pl-10 pr-10 bg-white border border-[#D4E0F0] rounded-xl text-[14px] sm:text-[15px] text-[#10234E] placeholder:text-[#94A3B8] focus:border-[#1760FF] focus:ring-4 focus:ring-[#1760FF]/10 outline-none transition-all"
                 />
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 focus:outline-none"
                   onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-[#94A3B8] hover:text-[#10234E] focus:outline-none transition-colors cursor-pointer"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    <EyeOff className="w-[18px] h-[18px]" />
                   ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <Eye className="w-[18px] h-[18px]" />
                   )}
                 </button>
               </div>
-              {errors.password && <p className="text-rose-500 text-xs mt-1 font-semibold">{errors.password.message}</p>}
+              {errors.password && (
+                <p className="text-rose-500 text-xs font-medium pl-1">{errors.password.message}</p>
+              )}
             </div>
 
-            <Button
+            {/* Forgot Password Link */}
+            <div className="flex justify-end pt-1 pb-0.5">
+              <button
+                type="button"
+                onClick={() => setIsForgotPassword(true)}
+                className="text-xs sm:text-[13px] font-semibold text-[#1760FF] hover:text-[#1250DF] transition-colors cursor-pointer"
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            {/* Submit Button */}
+            <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-sm transition mt-2 cursor-pointer"
+              className="w-full h-[46px] sm:h-[48px] mt-5 bg-[#1760FF] hover:bg-[#1250DF] active:scale-[0.99] text-white font-semibold text-[14px] sm:text-[15px] rounded-xl shadow-xs transition-all flex items-center justify-center cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Verifying Credentials...' : 'Sign In'}
-            </Button>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <span>Sign In</span>
+              )}
+            </button>
           </form>
 
-          <div className="border-t border-slate-100 pt-4 text-center">
-            <p className="text-xs text-slate-500">
-              Don&apos;t have an account?{' '}
-              <Link href="/auth/register" className="text-blue-600 hover:text-blue-700 font-bold hover:underline">
-                Register here
-              </Link>
-            </p>
+          {/* Footer Navigation */}
+          <div className="mt-5 sm:mt-6 text-center text-xs sm:text-[13px] text-[#64748B]">
+            <span>Don&apos;t have an account? </span>
+            <Link
+              href="/auth/register"
+              className="font-semibold text-[#1760FF] hover:text-[#1250DF] hover:underline transition-colors"
+            >
+              Sign up
+            </Link>
           </div>
         </>
       )}

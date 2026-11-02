@@ -6,7 +6,7 @@ import axios from 'axios';
 interface User {
   id: string;
   email: string;
-  role: 'student' | 'admin';
+  role: 'student' | 'admin' | 'super_admin';
   createdAt: string;
 }
 
@@ -30,6 +30,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Check if user is logged in on mount
   useEffect(() => {
     checkAuth();
+  }, []);
+
+  // Set up response interceptor to automatically evict stale tokens on 401
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      (err) => {
+        if (err.response?.status === 401) {
+          localStorage.removeItem('token');
+          setUser(null);
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
   }, []);
 
   const checkAuth = async () => {

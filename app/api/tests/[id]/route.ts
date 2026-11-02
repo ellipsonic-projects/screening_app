@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { gradePersistedTestResponses } from '@/lib/services/evaluation-pipeline';
+import { recalculateTestScore } from '@/lib/services/score-calculation';
 
 export async function GET(
   request: NextRequest,
@@ -85,14 +87,34 @@ export async function GET(
       const diffMs = Date.now() - lastPingTime;
       // 3 minutes = 180000 ms
       if (diffMs > 180000) {
-        // Mark as auto-submitted on the backend
-        test = await prisma.test.update({
-          where: { id: test.id },
+        // Atomic transition to prevent race conditions and duplicate evaluations
+        const updated = await prisma.test.updateMany({
+          where: {
+            id: test.id,
+            status: 'in_progress',
+            is_completed: false
+          },
           data: {
             status: 'auto_submitted',
             is_completed: true,
             end_time: new Date(),
             updated_at: new Date()
+          }
+        });
+
+        if (updated.count > 0) {
+          try {
+            await gradePersistedTestResponses(test.id);
+          } catch (evalErr) {
+            console.error('[Auto-submit Evaluation Error]', evalErr);
+          }
+        }
+
+        // Re-fetch the updated test with its latest evaluation results & score
+        const refreshedTest = await prisma.test.findFirst({
+          where: {
+            id: id,
+            student_id: test.student_id
           },
           include: {
             test_questions: {
@@ -103,10 +125,18 @@ export async function GET(
                 sequence_number: 'asc'
               }
             },
-            test_responses: true
+            test_responses: true,
+            student: {
+              include: {
+                user: { select: { email: true } }
+              }
+            }
           }
         });
 
+        if (refreshedTest) {
+          test = refreshedTest;
+        }
       }
     }
 
@@ -116,7 +146,9 @@ export async function GET(
     const formattedTest = {
       id: test.id,
       student_id: test.student_id,
-      status: test.status,
+      status: (test.is_completed && test.status === 'in_progress') ? 'submitted' : test.status,
+      is_completed: test.is_completed,
+      isCompleted: test.is_completed,
       score: showResults ? (test.score !== null ? Number(test.score) : null) : null,
       results_published: test.results_published,
       start_time: test.start_time,
@@ -187,6 +219,18 @@ export async function PATCH(
     const { status, evaluations } = data;
 
     if (evaluations && Array.isArray(evaluations)) {
+      const currentTest = await prisma.test.findUnique({
+        where: { id },
+        select: { status: true }
+      });
+
+      if (currentTest?.status === 'ineligible_attempt') {
+        return NextResponse.json(
+          { message: 'Cannot evaluate or award marks to an attempt that did not meet minimum attempt requirements' },
+          { status: 400 }
+        );
+      }
+
       for (const ev of evaluations) {
         const { questionId, pointsEarned, remarks } = ev;
 
@@ -202,6 +246,15 @@ export async function PATCH(
         });
 
         if (response && question) {
+          const parsedPoints = Number(pointsEarned);
+          const maxPoints = question.points || 0;
+          if (typeof pointsEarned === 'boolean' || isNaN(parsedPoints) || parsedPoints < 0 || parsedPoints > maxPoints) {
+            return NextResponse.json(
+              { message: `Invalid pointsEarned for question ${questionId}. Must be numeric between 0 and ${maxPoints}` },
+              { status: 400 }
+            );
+          }
+
           let cleanCode = response.student_answer || '';
           if (cleanCode.startsWith('// === EVALUATION REMARKS ===')) {
             const parts = cleanCode.split('// ==========================\n\n');
@@ -218,24 +271,30 @@ export async function PATCH(
           await prisma.testResponse.update({
             where: { id: response.id },
             data: {
-              points_earned: Number(pointsEarned),
-              is_correct: Number(pointsEarned) === Number(question.points),
+              points_earned: parsedPoints,
+              is_correct: parsedPoints === maxPoints,
+              evaluation_status: 'COMPLETED',
               student_answer: finalAnswer
+            }
+          });
+
+          await prisma.aIEvaluation.updateMany({
+            where: { test_response_id: response.id },
+            data: {
+              obtained_marks: parsedPoints,
+              evaluation_status: 'COMPLETED',
+              feedback: remarks ? `[EVALUATION REMARKS] ${remarks}` : undefined
             }
           });
         }
       }
 
-      // Recalculate total score
-      const allResponses = await prisma.testResponse.findMany({
-        where: { test_id: id }
-      });
-      const totalScore = allResponses.reduce((sum, r) => sum + (r.points_earned ? Number(r.points_earned) : 0), 0);
+      // Centralize score recalculation through recalculateTestScore service
+      await recalculateTestScore(id);
 
       const test = await prisma.test.update({
         where: { id },
         data: {
-          score: totalScore,
           status: 'evaluated'
         }
       });
@@ -243,8 +302,24 @@ export async function PATCH(
       return NextResponse.json({ message: 'Test evaluated successfully', test });
     }
 
+    const existingTest = await prisma.test.findUnique({
+      where: { id },
+      select: { start_time: true, status: true, is_completed: true }
+    });
+
+    if (!existingTest) {
+      return NextResponse.json({ message: 'Test not found' }, { status: 404 });
+    }
+
+    if (status === 'in_progress' && (existingTest.is_completed || existingTest.status === 'submitted' || existingTest.status === 'auto_submitted' || existingTest.status === 'ineligible_attempt')) {
+      return NextResponse.json(
+        { message: 'Assessment has already been completed and cannot be restarted', status: existingTest.status },
+        { status: 409 }
+      );
+    }
+
     const updateData: any = { status };
-    if (status === 'in_progress') {
+    if (status === 'in_progress' && !existingTest?.start_time) {
       updateData.start_time = new Date();
     }
 

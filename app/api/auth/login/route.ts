@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { LoginSchema } from '@/lib/validators';
-import { comparePassword, generateToken, setAuthCookie } from '@/lib/auth';
+import { comparePassword, generateToken, setAuthCookie, UserRole } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import {
   successResponse,
@@ -14,6 +14,8 @@ import {
   HTTP_STATUS,
   createResponse,
 } from '@/lib/api-response';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,14 +32,25 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, password } = validation.data;
+    const normalizedEmail = email.trim().toLowerCase();
 
     // Find user by email
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
       select: { id: true, email: true, password_hash: true, role: true, is_active: true }
     });
 
-    if (!user || !user.is_active) {
+    if (!user) {
+      console.warn(`[Auth Login] User not found for email: ${normalizedEmail}`);
+      const [response, status] = [
+        errorResponse('INVALID_CREDENTIALS', 'Invalid email or password'),
+        HTTP_STATUS.UNAUTHORIZED,
+      ];
+      return createResponse(response, status);
+    }
+
+    if (!user.is_active) {
+      console.warn(`[Auth Login] User account is deactivated: ${user.id} (${normalizedEmail})`);
       const [response, status] = [
         errorResponse('INVALID_CREDENTIALS', 'Invalid email or password'),
         HTTP_STATUS.UNAUTHORIZED,
@@ -49,6 +62,7 @@ export async function POST(request: NextRequest) {
     const isPasswordValid = await comparePassword(password, user.password_hash);
 
     if (!isPasswordValid) {
+      console.warn(`[Auth Login] Invalid password attempt for user: ${user.id} (${normalizedEmail})`);
       const [response, status] = [
         errorResponse('INVALID_CREDENTIALS', 'Invalid email or password'),
         HTTP_STATUS.UNAUTHORIZED,
@@ -56,11 +70,13 @@ export async function POST(request: NextRequest) {
       return createResponse(response, status);
     }
 
+    console.log(`[Auth Login] Successful login for user: ${user.id} (${normalizedEmail}), role: ${user.role}`);
+
     // Generate JWT token
     const token = generateToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role: user.role as UserRole,
     });
 
     // Set auth cookie
@@ -103,4 +119,3 @@ export async function OPTIONS() {
     },
   });
 }
-// Trigger rebuild

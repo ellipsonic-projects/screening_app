@@ -3,6 +3,14 @@
  * Used across frontend and backend
  */
 
+export interface CriterionEvaluation {
+  id: string;
+  name: string;
+  score: number;
+  maxScore: number;
+  explanation: string;
+}
+
 export interface EvaluationRequest {
   questionId: string;
   section?: string;
@@ -21,6 +29,8 @@ export interface EvaluationResponse {
   feedback: string;
   strengths: string[];
   improvements: string[];
+  deductionReasons?: string[];
+  criteriaScores?: CriterionEvaluation[];
   evaluationStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'PROCESSING' | 'RETRYING';
   evaluatedAt: string;
   modelUsed?: string;
@@ -28,3 +38,4 @@ export interface EvaluationResponse {
   error?: string;
   success: boolean;
 }
+
