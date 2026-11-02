@@ -211,13 +211,17 @@ export function QuestionsManager() {
     const sheet = workbook.addWorksheet('Open Text Questions');
     sheet.columns = [
       { header: 'Section', key: 'section', width: 30 },
-      { header: 'Question', key: 'question', width: 40 },
+      { header: 'Question Type', key: 'questionType', width: 15 },
+      { header: 'Question Code', key: 'questionCode', width: 15 },
+      { header: 'Question Text', key: 'question', width: 50 },
       { header: 'Minimum Words', key: 'minWords', width: 15 },
       { header: 'Maximum Words', key: 'maxWords', width: 15 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Written Communication & Collaboration', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '10' });
-    sheet.addRow({ section: 'Personality', question: 'Describe a situation where you had to adapt to significant unexpected change at work or university.', minWords: '50', maxWords: '250', marks: '0' });
+    // Sample non-Personality row - Question Code left blank
+    sheet.addRow({ section: 'Written Communication & Collaboration', questionType: 'open_text', questionCode: '', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '5' });
+    // Sample Personality row - Question Code required (P01-P33)
+    sheet.addRow({ section: 'Personality', questionType: 'open_text', questionCode: 'P01', question: 'Tell us about a hobby or interest you enjoy outside of work.', minWords: '50', maxWords: '250', marks: '0' });
     await triggerDownload(workbook, 'open-text-template.xlsx');
   };
 
@@ -276,22 +280,32 @@ export function QuestionsManager() {
         
         const headers = (jsonWithHeaders[0] || []).map(h => String(h).trim());
         
-        let requiredHeaders: string[] = [];
+        const hasHeader = (...candidates: string[]) =>
+          candidates.some(cand => headers.some(h => h.toLowerCase() === cand.toLowerCase()));
+
+        let missing: string[] = [];
         if (templateType === 'mcq') {
-           requiredHeaders = ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer', 'Marks'];
+          if (!hasHeader('Question', 'Question Text', 'QuestionText')) missing.push('Question Text');
+          ['Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer'].forEach(req => {
+            if (!hasHeader(req)) missing.push(req);
+          });
+          if (!hasHeader('Marks', 'Points')) missing.push('Marks');
         } else if (templateType === 'coding' || templateType === 'open_text') {
-           requiredHeaders = ['Question', 'Marks'];
+          if (!hasHeader('Question', 'Question Text', 'QuestionText')) missing.push('Question Text');
+          if (!hasHeader('Marks', 'Points')) missing.push('Marks');
         } else if (templateType === 'structured_response') {
-           requiredHeaders = ['Question', 'Field 1 Label', 'Marks'];
+          if (!hasHeader('Question', 'Question Text', 'QuestionText')) missing.push('Question Text');
+          if (!hasHeader('Field 1 Label')) missing.push('Field 1 Label');
+          if (!hasHeader('Marks', 'Points')) missing.push('Marks');
         }
 
-        const missing = requiredHeaders.filter(req => !headers.some(h => h.toLowerCase() === req.toLowerCase()));
         if (missing.length > 0) {
-           throw new Error(`Invalid Template\nMissing Columns:\n${missing.join('\n')}`);
+          throw new Error(`Invalid Template\nMissing Columns:\n${missing.join('\n')}`);
         }
 
         const json = XLSX.utils.sheet_to_json(worksheet) as any[];
         totalProcessed = json.length;
+        const seenPersonalityCodes = new Set<string>();
 
         json.forEach((row, idx) => {
           const rowIndex = idx + 2;
@@ -358,6 +372,7 @@ export function QuestionsManager() {
             else correctAnswer = rawCorrect;
 
             parsedQuestions.push({
+              _rowIndex: rowIndex,
               questionText: String(questionText).trim(),
               type: 'mcq',
               section: sectionMap,
@@ -369,6 +384,7 @@ export function QuestionsManager() {
             });
           } else if (templateType === 'coding') {
             parsedQuestions.push({
+              _rowIndex: rowIndex,
               questionText: String(questionText).trim(),
               type: 'coding',
               section: sectionMap,
@@ -377,12 +393,43 @@ export function QuestionsManager() {
               isPublished: true
             });
           } else if (templateType === 'open_text') {
+            // Read and validate Question Code for Personality rows
+            const rawCode = String(row['Question Code'] || row['Code'] || '').trim();
+            let personalityCode: string | undefined = undefined;
+            if (sectionMap === 'PERSONALITY') {
+              if (!rawCode) {
+                missingFieldsCount++;
+                skippedDetails.push({ row: rowIndex, reason: 'Personality question is missing a Question Code (P01–P33). Add the code in the "Question Code" column.' });
+                return;
+              }
+              if (!/^P(0?[1-9]|[12][0-9]|3[0-3])$/i.test(rawCode)) {
+                missingFieldsCount++;
+                skippedDetails.push({ row: rowIndex, reason: `Invalid Question Code "${rawCode}". Must be P01–P33 (e.g. P07, P12, P33).` });
+                return;
+              }
+              let norm = rawCode.toUpperCase();
+              if (norm.length === 2) norm = `P0${norm.slice(1)}`;
+              if (seenPersonalityCodes.has(norm)) {
+                missingFieldsCount++;
+                skippedDetails.push({ row: rowIndex, reason: `Duplicate Personality question code "${norm}" in this upload. Each P-code may only appear once.` });
+                return;
+              }
+              seenPersonalityCodes.add(norm);
+              personalityCode = norm;
+            }
+            const minWords = row['Minimum Words'] || row['Min Words'];
+            const maxWords = row['Maximum Words'] || row['Max Words'];
+            const optionsJsonOpenText: any = {};
+            if (minWords !== undefined && minWords !== null && minWords !== '') optionsJsonOpenText.minWords = Number(minWords);
+            if (maxWords !== undefined && maxWords !== null && maxWords !== '') optionsJsonOpenText.maxWords = Number(maxWords);
+            if (personalityCode) optionsJsonOpenText.code = personalityCode;
             parsedQuestions.push({
+              _rowIndex: rowIndex,
               questionText: String(questionText).trim(),
               type: 'open_text',
               section: sectionMap,
               points: sectionMap === 'PERSONALITY' ? 0 : points,
-              expectedAnswerLength: (row['Minimum Words'] || row['Maximum Words']) ? `${row['Minimum Words'] || 0}-${row['Maximum Words'] || 300}` : undefined,
+              optionsJson: optionsJsonOpenText,
               isPublished: true
             });
           } else if (templateType === 'structured_response') {
@@ -402,6 +449,7 @@ export function QuestionsManager() {
             if (field3) optionsJson.push({ label: String(field3) });
 
             parsedQuestions.push({
+              _rowIndex: rowIndex,
               questionText: String(questionText).trim(),
               type: 'structured_response',
               section: sectionMap,

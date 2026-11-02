@@ -217,13 +217,17 @@ export function QuestionImporter() {
     const sheet = workbook.addWorksheet('Open Text Questions');
     sheet.columns = [
       { header: 'Section', key: 'section', width: 30 },
-      { header: 'Question', key: 'question', width: 40 },
+      { header: 'Question Type', key: 'questionType', width: 15 },
+      { header: 'Question Code', key: 'questionCode', width: 15 },
+      { header: 'Question Text', key: 'question', width: 50 },
       { header: 'Minimum Words', key: 'minWords', width: 15 },
       { header: 'Maximum Words', key: 'maxWords', width: 15 },
       { header: 'Marks', key: 'marks', width: 10 }
     ];
-    sheet.addRow({ section: 'Written Communication & Collaboration', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '5' });
-    sheet.addRow({ section: 'Personality', question: 'Describe a situation where you had to adapt to significant unexpected change at work or university.', minWords: '50', maxWords: '250', marks: '0' });
+    // Sample non-Personality row — Question Code left blank
+    sheet.addRow({ section: 'Written Communication & Collaboration', questionType: 'open_text', questionCode: '', question: 'Describe your leadership experience.', minWords: '100', maxWords: '300', marks: '5' });
+    // Sample Personality row — Question Code required (P01–P33)
+    sheet.addRow({ section: 'Personality', questionType: 'open_text', questionCode: 'P01', question: 'Tell us about a hobby or interest you enjoy outside of work.', minWords: '50', maxWords: '250', marks: '0' });
     await triggerDownload(workbook, 'open-text-template.xlsx');
   };
 

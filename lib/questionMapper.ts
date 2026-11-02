@@ -105,10 +105,32 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   }
 
   if (['open_text', 'structured_response'].includes(type)) {
-    const minW = rawData.minWords ?? rawData['Min Words'];
-    const maxW = rawData.maxWords ?? rawData['Max Words'];
+    const minW = rawData.minWords ?? rawData['Minimum Words'] ?? rawData['Min Words'];
+    const maxW = rawData.maxWords ?? rawData['Maximum Words'] ?? rawData['Max Words'];
     if (minW !== undefined && minW !== null && minW !== '') optionsJson.minWords = Number(minW);
     if (maxW !== undefined && maxW !== null && maxW !== '') optionsJson.maxWords = Number(maxW);
+  }
+
+  // Question Code — required for Personality (P01–P33), ignored for all other sections
+  if (isPersonalityCategory(section)) {
+    const rawCode = String(rawData.code || rawData['Question Code'] || rawData['Code'] || rawData.optionsJson?.code || rawData.options_json?.code || '').trim();
+    if (!rawCode) {
+      throw new Error(
+        `Row ${rowIndex !== undefined ? rowIndex : '?'}: Personality question is missing a Question Code. ` +
+        `Add a valid code (P01–P33) in the "Question Code" column.`
+      );
+    }
+    if (!/^P(0?[1-9]|[12][0-9]|3[0-3])$/i.test(rawCode)) {
+      throw new Error(
+        `Row ${rowIndex !== undefined ? rowIndex : '?'}: Invalid Question Code "${rawCode}". ` +
+        `Must be P01–P33 (e.g. P01, P12, P33).`
+      );
+    }
+    let normalizedCode = rawCode.toUpperCase();
+    if (normalizedCode.length === 2) {
+      normalizedCode = `P0${normalizedCode.slice(1)}`;
+    }
+    optionsJson.code = normalizedCode;
   }
 
 
@@ -129,10 +151,10 @@ export function mapQuestionPayload(rawData: any, rowIndex?: number) {
   
   const payload = {
     ...(rowIndex !== undefined ? { _rowIndex: rowIndex } : {}),
-    questionText: String(rawData.questionText || rawData['Question Text'] || ''),
+    questionText: String(rawData.questionText || rawData['Question Text'] || rawData['Question'] || ''),
     type,
     section,
-    points: type === 'single_select' ? 0 : (showsMarks ? (Number(rawData.points || rawData['Points']) || 0) : 0),
+    points: type === 'single_select' ? 0 : (showsMarks ? (Number(rawData.points || rawData['Points'] || rawData['Marks']) || 0) : 0),
     timeLimitSeconds: (Number(rawData.expectedDuration || rawData['Expected Duration']) ? Number(rawData.expectedDuration || rawData['Expected Duration']) * 60 : Number(rawData.timeLimitSeconds || rawData['Time Limit'])) || 60,
     isPublished: rawData.isPublished !== undefined ? rawData.isPublished : true,
     explanation: (rawData.explanation || rawData['Explanation']) ? String(rawData.explanation || rawData['Explanation']) : undefined,

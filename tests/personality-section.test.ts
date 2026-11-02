@@ -143,6 +143,7 @@ async function runPersonalityRegressionTests() {
     // Excel row mapper checks
     const validExcelRow = {
       'Section': 'Personality',
+      'Question Code': 'P01',
       'Question Text': 'Describe your approach to receiving critical feedback.',
       'Question Type': 'open_text',
       'Points': '10'
@@ -207,6 +208,7 @@ async function runPersonalityRegressionTests() {
       },
       {
         'Section': 'Personality',
+        'Question Code': 'P07',
         'Question Text': 'Describe a project where you had to adapt quickly when all initial requirements changed.',
         'Question Type': 'open_text',
         'Min Words': '50',
@@ -215,6 +217,7 @@ async function runPersonalityRegressionTests() {
       },
       {
         'Section': 'PERSONALITY',
+        'Question Code': 'P08',
         'Question Text': 'How do you handle ambiguous goals when working under tight timelines?',
         'Question Type': 'open_text',
         'Points': '0'
