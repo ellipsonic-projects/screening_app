@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { enqueueEvaluationJob } from '@/lib/queue/evaluation-queue';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
+import { processPersonalityEvaluationsForTest } from '@/lib/services/evaluation-pipeline';
 import { SubmitTestResponseSchema } from '@/lib/validators';
 import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
@@ -161,9 +162,16 @@ export async function POST(
       }
 
       if (testResponse.question && isPersonalityCategory(testResponse.question.section)) {
+        after(() => {
+          processPersonalityEvaluationsForTest(id).catch(err => {
+            console.error('[Personality Re-evaluation Error]', err);
+          });
+        });
+
         return NextResponse.json({
-          message: 'Personality evaluation is disabled pending evaluation criteria approval.'
-        }, { status: 400 });
+          message: 'Personality qualitative re-evaluation queued',
+          status: 'PROCESSING'
+        });
       }
 
       const trimmedAnswer = (testResponse.student_answer || '').trim();
@@ -461,6 +469,7 @@ export async function POST(
       }
 
       const evalPayloads: any[] = [];
+      let hasPersonalityInSubmission = false;
       const questionMap = new Map();
       if ((test as any).test_questions) {
         (test as any).test_questions.forEach((tq: any) => {
@@ -513,18 +522,19 @@ export async function POST(
             continue;
           }
 
-          // Personality questions: NEVER send to AI queue, keep unevaluated with null points
+          // Personality questions: Unscored qualitative evaluation queue
           if (q && isPersonalityCategory(q.section)) {
+            hasPersonalityInSubmission = true;
             await prisma.testResponse.updateMany({
               where: { test_id: test.id, question_id: response.questionId },
               data: {
                 points_earned: null,
                 is_correct: null,
-                evaluation_status: 'PENDING',
+                evaluation_status: 'PROCESSING',
                 ai_evaluation_json: {
-                  evaluationStatus: 'PENDING',
+                  overviewStatus: 'PROCESSING',
+                  evaluationStatus: 'PROCESSING',
                   score: null,
-                  feedback: 'Personality evaluation criteria pending approval.',
                   evaluatedAt: new Date().toISOString()
                 }
               }
@@ -687,22 +697,31 @@ export async function POST(
         }
       });
 
-      if (evalPayloads.length > 0) {
-        // Set all to PENDING immediately before queueing
-        for (const payload of evalPayloads) {
-          await prisma.testResponse.updateMany({
-            where: { test_id: test.id, question_id: payload.questionId },
-            data: {
-              ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
-            }
-          });
+      if (evalPayloads.length > 0 || hasPersonalityInSubmission) {
+        if (evalPayloads.length > 0) {
+          // Set all to PENDING immediately before queueing
+          for (const payload of evalPayloads) {
+            await prisma.testResponse.updateMany({
+              where: { test_id: test.id, question_id: payload.questionId },
+              data: {
+                ai_evaluation_json: { evaluationStatus: 'PENDING', evaluatedAt: new Date().toISOString() }
+              }
+            });
+          }
         }
 
         try {
           after(() => {
-            enqueueEvaluationJob(test.id, evalPayloads).catch(err => {
-              console.error('[Background Evaluation Error]', err);
-            });
+            if (evalPayloads.length > 0) {
+              enqueueEvaluationJob(test.id, evalPayloads).catch(err => {
+                console.error('[Background Evaluation Error]', err);
+              });
+            }
+            if (hasPersonalityInSubmission) {
+              processPersonalityEvaluationsForTest(test.id).catch(err => {
+                console.error('[Personality Evaluation Error]', err);
+              });
+            }
           });
         } catch (err) {
           console.error('[Queueing Error]', err);

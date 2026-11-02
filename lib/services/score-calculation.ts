@@ -38,15 +38,22 @@ export async function recalculateTestScore(testId: string): Promise<number> {
     return 0;
   }
 
+  // Fetch existing analytics to preserve non-scored metadata (such as personalityOverview or attemptEligibility)
+  const existingAnalytics = await prisma.testAnalytics.findUnique({
+    where: { test_id: testId },
+    select: { section_totals: true }
+  });
+  const existingTotalsObj = (existingAnalytics?.section_totals as Record<string, any>) || {};
+
   // Calculate maximum possible points for the test (Eligibility and Personality are unscored)
   let totalPossiblePoints = 0;
-  const sectionTotals: Record<string, number> = {};
+  const sectionTotals: Record<string, any> = { ...existingTotalsObj };
 
   for (const tq of test.test_questions) {
     if (isEligibilityCategory(tq.question.section) || isPersonalityCategory(tq.question.section)) continue;
     totalPossiblePoints += tq.question.points || 0;
     const section = canonicalizeCategory(tq.question.section) || 'uncategorized';
-    if (!(section in sectionTotals)) {
+    if (!(section in sectionTotals) || typeof sectionTotals[section] !== 'number') {
       sectionTotals[section] = 0;
     }
   }

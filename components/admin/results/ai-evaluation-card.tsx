@@ -52,6 +52,15 @@ export function AIEvaluationCard({
 
   const getResultInfo = (evaluation: any) => {
     if (isPersonality) {
+      if (evaluation.status === 'COMPLETED') {
+        return { text: 'Qualitative Observation Recorded', badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+      }
+      if (evaluation.status === 'PROCESSING') {
+        return { text: 'Evaluating...', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' };
+      }
+      if (evaluation.status === 'FAILED') {
+        return { text: 'Evaluation Failed', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' };
+      }
       return { text: 'Pending Evaluation (Unscored)', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' };
     }
     if (evaluation.status === 'FAILED') {
@@ -174,12 +183,12 @@ export function AIEvaluationCard({
         {/* Right: Points Awarded Box & Action Controls */}
         <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
           {isPersonality ? (
-            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl px-3 py-1.5 text-center shadow-2xs min-w-[95px]">
-              <div className="text-xs font-bold text-amber-800 leading-none">
-                Pending
+            <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl px-3 py-1.5 text-center shadow-2xs min-w-[95px]">
+              <div className="text-xs font-bold text-indigo-800 leading-none">
+                {evaluation.questionCode || 'P??'}
               </div>
-              <div className="text-[9px] font-bold uppercase text-amber-600 tracking-wider mt-1">
-                Unevaluated
+              <div className="text-[9px] font-bold uppercase text-indigo-600 tracking-wider mt-1">
+                {evaluation.status === 'COMPLETED' ? 'Reviewed' : 'Qualitative'}
               </div>
             </div>
           ) : !isUnscored && (
@@ -207,14 +216,14 @@ export function AIEvaluationCard({
                 <Pencil className="w-3.5 h-3.5" />
               </Button>
             )}
-            {!isUnscored && evaluation.status !== 'COMPLETED' && (
+            {((!isUnscored && evaluation.status !== 'COMPLETED') || isPersonality) && (
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={handleReevaluate} 
                 disabled={isReevaluating} 
                 className="h-7 w-7 p-0 text-slate-500 hover:text-slate-800 border-slate-200 bg-white hover:bg-slate-50 rounded-lg cursor-pointer shadow-2xs" 
-                title="Re-evaluate with AI"
+                title={isPersonality ? "Re-evaluate Qualitative Overview" : "Re-evaluate with AI"}
               >
                 {isReevaluating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
               </Button>
@@ -325,19 +334,37 @@ export function AIEvaluationCard({
 
           {!isAiBoxCollapsed && (
             isPersonality ? (
-              <div className="border border-slate-200/80 rounded-xl p-3.5 bg-slate-50/50 flex flex-col justify-between shadow-2xs min-w-0">
+              <div className="border border-slate-200/80 rounded-xl p-3.5 bg-slate-50/50 flex flex-col justify-between shadow-2xs min-w-0 space-y-3">
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${resultInfo.badgeClass}`}>
                       {resultInfo.text}
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">
-                      Model: None
+                      Model: {evaluation.modelUsed || 'Qualitative Engine'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 leading-relaxed mt-2.5 break-words">
-                    Personality responses are preserved unscored. AI evaluation is disabled until evaluation criteria are explicitly approved.
+
+                  {evaluation.questionCode && (
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded border border-indigo-200">
+                        {evaluation.questionCode}
+                      </span>
+                      {evaluation.evidenceStatus && (
+                        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          Evidence: {evaluation.evidenceStatus}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-slate-700 leading-relaxed mt-2.5 break-words">
+                    {evaluation.feedback || (evaluation.status === 'COMPLETED' ? 'Qualitative observation recorded.' : 'Qualitative evaluation in progress. Personality questions are evaluated holistically.')}
                   </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/60 text-[10px] text-slate-500 italic">
+                  Note: Personality responses are strictly non-scored and do not contribute to numerical marks or shortlisting ranking.
                 </div>
               </div>
             ) : (

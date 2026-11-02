@@ -3,6 +3,7 @@ import { evaluateAnswer } from '@/lib/evaluation-engine';
 import { recalculateTestScore } from '@/lib/services/score-calculation';
 import { isEligibilityCategory, isPersonalityCategory } from '@/lib/categories';
 import { assessTestAttemptEligibility } from '@/lib/services/attempt-eligibility';
+import { evaluatePersonalityResponses } from '@/lib/evaluation/personality-evaluation';
 import { EvaluationRequest } from '@/types';
 
 export interface BackgroundEvalPayload {
@@ -40,6 +41,8 @@ export async function processBackgroundEvaluations(
       console.warn(`[Background Evaluation] Ineligible attempt cannot be evaluated: ${testId}`);
       return;
     }
+
+    let hasPersonalityInTest = false;
 
     for (const payload of payloads) {
       const { questionId, studentAnswer } = payload;
@@ -81,24 +84,9 @@ export async function processBackgroundEvaluations(
           continue;
         }
 
-        // Defense-in-depth: Personality answers must never be evaluated by AI or scored
+        // Qualitative Personality Overview handling
         if (isPersonalityCategory(question.section)) {
-          if (existingResponse) {
-            await prisma.testResponse.update({
-              where: { id: existingResponse.id },
-              data: {
-                points_earned: null,
-                is_correct: null,
-                evaluation_status: 'PENDING',
-                ai_evaluation_json: {
-                  evaluationStatus: 'PENDING',
-                  score: null,
-                  feedback: 'Personality evaluation criteria pending approval.',
-                  evaluatedAt: new Date().toISOString()
-                }
-              }
-            });
-          }
+          hasPersonalityInTest = true;
           continue;
         }
 
@@ -305,6 +293,18 @@ export async function processBackgroundEvaluations(
       }
     }
 
+    // Process Personality qualitative overview if test has personality questions
+    const hasAnyPersonalityResponses = await prisma.testResponse.findFirst({
+      where: {
+        test_id: testId,
+        question: { section: 'PERSONALITY' }
+      }
+    });
+
+    if (hasPersonalityInTest || hasAnyPersonalityResponses) {
+      await processPersonalityEvaluationsForTest(testId);
+    }
+
     try {
       await recalculateTestScore(testId);
     } catch (scoreErr) {
@@ -313,6 +313,156 @@ export async function processBackgroundEvaluations(
     
   } catch (error) {
     console.error(`[Background Evaluation Fatal Error] Test ID: ${testId}`, error);
+  }
+}
+
+/**
+ * Evaluates Personality responses for a test qualitatively.
+ * Generates the evidence-based Personality Overview.
+ * Never assigns marks or alters test scores.
+ */
+export async function processPersonalityEvaluationsForTest(testId: string) {
+  try {
+    const test = await prisma.test.findUnique({
+      where: { id: testId },
+      include: {
+        test_responses: {
+          include: { question: true }
+        }
+      }
+    });
+
+    if (!test || test.status === 'ineligible_attempt') return;
+
+    const personalityResponses = (test.test_responses || []).filter(
+      r => r.question && isPersonalityCategory(r.question.section)
+    );
+
+    if (personalityResponses.length === 0) return;
+
+    // Mark as PROCESSING
+    for (const r of personalityResponses) {
+      await prisma.testResponse.update({
+        where: { id: r.id },
+        data: {
+          evaluation_status: 'PROCESSING',
+          ai_evaluation_json: {
+            overviewStatus: 'PROCESSING',
+            evaluationStatus: 'PROCESSING',
+            evaluatedAt: new Date().toISOString()
+          }
+        }
+      });
+    }
+
+    const evalPayloads = personalityResponses.map(r => ({
+      questionId: r.question.id,
+      questionText: r.question.question_text,
+      optionsJson: r.question.options_json,
+      studentAnswer: r.student_answer || ''
+    }));
+
+    const evalResult = await evaluatePersonalityResponses(evalPayloads);
+
+    for (const r of personalityResponses) {
+      const obs = evalResult.questionObservations.get(r.question.id);
+      const isCompleted = evalResult.success;
+
+      await prisma.testResponse.update({
+        where: { id: r.id },
+        data: {
+          points_earned: null,
+          is_correct: null,
+          evaluation_status: isCompleted ? 'COMPLETED' : 'FAILED',
+          ai_evaluation_json: {
+            overviewStatus: isCompleted ? 'QUALITATIVE_OVERVIEW_READY' : 'EVALUATION_FAILED',
+            evaluationStatus: isCompleted ? 'COMPLETED' : 'FAILED',
+            score: null,
+            pointsEarned: null,
+            feedback: obs?.summary || 'Response recorded for review.',
+            evidenceStatus: obs?.evidenceStatus || 'SUFFICIENT',
+            questionCode: obs?.questionCode || 'P_UNSPECIFIED',
+            isMapped: obs?.isMapped ?? true,
+            keyObservations: obs?.keyObservations || [],
+            evaluatedAt: new Date().toISOString(),
+            ...(evalResult.error ? { error: evalResult.error } : {})
+          }
+        }
+      });
+
+      await prisma.aIEvaluation.upsert({
+        where: { test_response_id: r.id },
+        update: {
+          obtained_marks: null,
+          maximum_marks: null,
+          feedback: obs?.summary || 'Qualitative assessment recorded.',
+          strengths: obs?.keyObservations || [],
+          improvements: [],
+          evaluation_status: isCompleted ? 'COMPLETED' : 'FAILED',
+          model_used: evalResult.modelUsed,
+          raw_response: {
+            overviewStatus: isCompleted ? 'QUALITATIVE_OVERVIEW_READY' : 'EVALUATION_FAILED',
+            questionCode: obs?.questionCode,
+            evidenceStatus: obs?.evidenceStatus,
+            isMapped: obs?.isMapped,
+            overview: evalResult.overview
+          } as any,
+          evaluated_at: new Date()
+        },
+        create: {
+          test_id: testId,
+          student_id: test.student_id,
+          question_id: r.question.id,
+          section: r.question.section,
+          question_type: r.question.type,
+          obtained_marks: null,
+          maximum_marks: null,
+          feedback: obs?.summary || 'Qualitative assessment recorded.',
+          strengths: obs?.keyObservations || [],
+          improvements: [],
+          evaluation_status: isCompleted ? 'COMPLETED' : 'FAILED',
+          model_used: evalResult.modelUsed,
+          raw_response: {
+            overviewStatus: isCompleted ? 'QUALITATIVE_OVERVIEW_READY' : 'EVALUATION_FAILED',
+            questionCode: obs?.questionCode,
+            evidenceStatus: obs?.evidenceStatus,
+            isMapped: obs?.isMapped,
+            overview: evalResult.overview
+          } as any,
+          evaluated_at: new Date(),
+          test_response_id: r.id
+        }
+      });
+    }
+
+    // Persist overview into analytics section_totals (merging safely)
+    if (evalResult.success && evalResult.overview) {
+      const existingAnalytics = await prisma.testAnalytics.findUnique({
+        where: { test_id: testId },
+        select: { section_totals: true }
+      });
+      const existingTotals = (existingAnalytics?.section_totals as Record<string, any>) || {};
+      await prisma.testAnalytics.upsert({
+        where: { test_id: testId },
+        update: {
+          section_totals: {
+            ...existingTotals,
+            personalityOverview: evalResult.overview
+          } as any
+        },
+        create: {
+          test_id: testId,
+          total_score: null,
+          overall_percentage: null,
+          section_totals: {
+            ...existingTotals,
+            personalityOverview: evalResult.overview
+          } as any
+        }
+      });
+    }
+  } catch (err) {
+    console.error(`[Personality Evaluation Pipeline Error] Test ${testId}:`, err);
   }
 }
 

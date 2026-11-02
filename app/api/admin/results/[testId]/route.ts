@@ -66,6 +66,25 @@ export async function GET(
 
     const REVIEWABLE_TYPES = ['coding', 'structured_response', 'open_text'];
 
+    const sectionTotals = (test.analytics?.section_totals as any) || {};
+    let personalityOverview = sectionTotals.personalityOverview || null;
+
+    if (!personalityOverview) {
+      for (const r of test.test_responses) {
+        if (isPersonalityCategory(r.question.section)) {
+          const ai = r.ai_evaluation as any;
+          if (ai?.raw_response?.overview) {
+            personalityOverview = ai.raw_response.overview;
+            break;
+          }
+          if ((r.ai_evaluation_json as any)?.overview) {
+            personalityOverview = (r.ai_evaluation_json as any).overview;
+            break;
+          }
+        }
+      }
+    }
+
     const finalSectionScores = SECTIONS.map(sec => {
       const isSecEligibility = isEligibilityCategory(sec.id);
       const isSecPersonality = isPersonalityCategory(sec.id);
@@ -91,11 +110,20 @@ export async function GET(
         return sum + earned;
       }, 0);
       
+      let isCompleted = false;
+      if (isSecPersonality) {
+        const hasPersonalityResponses = responsesInSection.length > 0;
+        const allPersonalityCompleted = hasPersonalityResponses && responsesInSection.every(r => r.evaluation_status === 'COMPLETED');
+        isCompleted = allPersonalityCompleted || (personalityOverview !== null && personalityOverview !== undefined);
+      } else {
+        isCompleted = !isIneligible && !hasPendingInSec && (test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'evaluated');
+      }
+
       return {
         sectionName: sec.label,
         marksObtained,
         totalMarks,
-        isCompleted: !isSecPersonality && !isIneligible && !hasPendingInSec && (test.status === 'submitted' || test.status === 'auto_submitted' || test.status === 'evaluated')
+        isCompleted
       };
     });
 
@@ -179,7 +207,15 @@ export async function GET(
           } else if (isEligibility) {
             status = 'ELIGIBILITY_ONLY';
           } else if (isPersonality) {
-            status = 'PENDING';
+            if (r.evaluation_status === 'COMPLETED' || ai?.evaluation_status === 'COMPLETED') {
+              status = 'COMPLETED';
+            } else if (r.evaluation_status === 'FAILED' || ai?.evaluation_status === 'FAILED') {
+              status = 'FAILED';
+            } else if (r.evaluation_status === 'PROCESSING' || ai?.evaluation_status === 'PROCESSING') {
+              status = 'PROCESSING';
+            } else {
+              status = 'PENDING';
+            }
           } else if (isAiReviewable) {
             if (ai?.evaluation_status) {
               status = ai.evaluation_status;
@@ -210,6 +246,9 @@ export async function GET(
             pointsEarned = r.points_earned !== null ? Number(r.points_earned) : null;
           }
 
+          const rEvalJson = (r.ai_evaluation_json as any) || {};
+          const rawResp = ai?.raw_response || rEvalJson || null;
+
           return {
             questionId: r.question.id,
             question: r.question.question_text,
@@ -220,16 +259,20 @@ export async function GET(
             maxPoints: (isEligibility || isPersonality) ? null : (ai?.maximum_marks ?? r.question.points ?? 0),
             isCorrect: (isIneligible || isFailed || isPersonality) ? null : r.is_correct,
             status,
-            feedback: isPersonality ? 'Personality evaluation pending criteria approval.' : ai?.feedback,
+            questionCode: isPersonality ? (rEvalJson.questionCode || (rawResp as any)?.questionCode || null) : null,
+            evidenceStatus: isPersonality ? (rEvalJson.evidenceStatus || (rawResp as any)?.evidenceStatus || null) : null,
+            feedback: isPersonality 
+              ? (rEvalJson.feedback || ai?.feedback || (status === 'COMPLETED' ? 'Qualitative observation recorded.' : 'Personality evaluation in progress.')) 
+              : ai?.feedback,
             strengths: isPersonality ? [] : ai?.strengths,
             improvements: isPersonality ? [] : ai?.improvements,
-            criteriaScores: isPersonality ? [] : ((ai?.raw_response as any)?.criteriaScores || (r.ai_evaluation_json as any)?.criteriaScores || []),
-            deductionReasons: isPersonality ? [] : ((ai?.raw_response as any)?.deductionReasons || (r.ai_evaluation_json as any)?.deductionReasons || []),
+            criteriaScores: isPersonality ? [] : ((ai?.raw_response as any)?.criteriaScores || rEvalJson.criteriaScores || []),
+            deductionReasons: isPersonality ? [] : ((ai?.raw_response as any)?.deductionReasons || rEvalJson.deductionReasons || []),
             mistakes: isPersonality ? [] : ((ai?.raw_response as any)?.mistakes || []),
             suggestions: isPersonality ? [] : ((ai?.raw_response as any)?.suggestions || []),
-            modelUsed: isPersonality ? 'none' : ai?.model_used,
-            rawResponse: isPersonality ? null : (ai?.raw_response || r.ai_evaluation_json || null),
-            evaluatedAt: isPersonality ? null : (ai?.evaluated_at || (r.ai_evaluation_json as any)?.evaluatedAt || null)
+            modelUsed: isPersonality ? (ai?.model_used || 'openrouter/anthropic/claude-3.5-sonnet') : ai?.model_used,
+            rawResponse: rawResp,
+            evaluatedAt: isPersonality ? (ai?.evaluated_at || rEvalJson.evaluatedAt || null) : (ai?.evaluated_at || rEvalJson.evaluatedAt || null)
           };
 
         })
@@ -252,6 +295,7 @@ export async function GET(
         totalDuration: test.total_duration,
         timeTaken: test.start_time && test.end_time ? Math.round((new Date(test.end_time).getTime() - new Date(test.start_time).getTime()) / 60000) : (test.analytics?.time_taken || null),
         scores,
+        personalityOverview,
         aiEvaluationsBySection,
         attemptEligibility: {
           isEligible: !isIneligible,

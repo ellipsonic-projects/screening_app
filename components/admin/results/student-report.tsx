@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '@/components/common/BrandLogo';
 import { AIEvaluationCard } from './ai-evaluation-card';
+import { PersonalityOverviewBox } from './personality-overview-box';
 import { 
   canonicalizeCategory, 
   isEligibilityCategory, 
@@ -98,8 +99,12 @@ const SectionScoreCard = ({
         {isPersonality ? (
           <div className="flex items-center justify-between text-xs font-semibold">
             <span className="text-[10px] text-slate-400 font-medium">Evaluation</span>
-            <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-              Pending Criteria
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+              isCompleted 
+                ? 'text-indigo-700 bg-indigo-50 border-indigo-200' 
+                : 'text-amber-700 bg-amber-50 border-amber-200'
+            }`}>
+              {isCompleted ? 'Qualitative Review' : 'In Progress'}
             </span>
           </div>
         ) : isEligibility ? (
@@ -335,6 +340,9 @@ export function StudentReport() {
           </div>
         )}
 
+        {/* Personality Overview (Admin/Recruiter Review Only) */}
+        <PersonalityOverviewBox overview={data.personalityOverview} />
+
         {/* 2. Section Performance (10 Cards in 5-Column Grid on Desktop) */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -394,7 +402,7 @@ export function StudentReport() {
                         <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
                           {section.evaluations.length} {section.evaluations.length === 1 ? 'Question' : 'Questions'}
                         </span>
-                        {!isEligibilityCategory(section.sectionName) && (
+                        {!isEligibilityCategory(section.sectionName) && !isPersonalityCategory(section.sectionName) && (
                           <span className="text-[10px] font-bold text-[#1760FF] bg-[#EAF2FE] px-2 py-0.5 rounded-md border border-blue-100">
                             Avg: {avgScore} Pts
                           </span>
