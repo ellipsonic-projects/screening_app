@@ -87,4 +87,3 @@ See `DOCKER.md` or `docs/DEPLOYMENT.md` for more detailed instructions.
 ## 📄 License
 This project is proprietary and confidential. Unauthorized copying, distribution, or reverse-engineering is strictly prohibited.
 
-adminportal
